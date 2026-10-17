@@ -1,0 +1,25 @@
+node_modules
+dist
+.env
+.env.local
+.env.*.local
+
+# Local secrets
+.env*
+!.env.example
+
+# Build output and dependencies
+node_modules/
+dist/
+
+# Local phase backups
+.phase3-backup*/
+.phase4-backup*/
+phase3-migration-backup*.sql
+
+# Supabase local CLI metadata
+supabase/.temp/
+
+# Timestamped backups
+*.backup-*
+.gitignore.backup-*

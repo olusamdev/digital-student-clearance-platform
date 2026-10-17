@@ -1,0 +1,55 @@
+﻿import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const allowedOrigin = Deno.env.get("ALLOWED_ORIGIN") ?? "";
+const cors = (origin: string) => ({ "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Vary": "Origin" });
+Deno.serve(async (req) => {
+  const origin = req.headers.get("origin") ?? "";
+  if (!allowedOrigin || origin !== allowedOrigin) return new Response("Forbidden", { status: 403 });
+  const headers = cors(origin);
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json" } });
+  if (req.method === "OPTIONS") return new Response("ok", { headers });
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  try {
+    const url = Deno.env.get("SUPABASE_URL"), anon = Deno.env.get("SUPABASE_ANON_KEY"), service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!url || !anon || !service) return json({ error: "Server configuration incomplete" }, 500);
+    const authorization = req.headers.get("Authorization");
+    if (!authorization?.startsWith("Bearer ")) return json({ error: "Authentication required" }, 401);
+    const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
+    const client = createClient(url, anon, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: userData, error: userError } = await client.auth.getUser();
+    const actor = userData.user;
+    if (userError || !actor) return json({ error: "Invalid session" }, 401);
+    const { data: profile, error: profileError } = await admin.from("staff_profiles").select("user_id").eq("user_id", actor.id).eq("active", true).maybeSingle();
+    const { data: roles, error: rolesError } = await admin.from("staff_role_assignments").select("role").eq("user_id", actor.id).eq("active", true);
+    if (profileError || rolesError) {
+  console.error("list-staff permission query failed", {
+    profileError: profileError?.message,
+    rolesError: rolesError?.message
+  });
+  return json({ error: "Could not verify staff permissions" }, 500);
+}
+    if (!profile || !roles?.some((role) => role.role === "superadmin")) return json({ error: "SuperAdmin access required" }, 403);
+
+    const [profilesResult, assignmentsResult, officesResult] = await Promise.all([
+      admin.from("staff_profiles").select("user_id, full_name, email, staff_number, active, created_at").order("full_name", { ascending: true }),
+      admin.from("staff_role_assignments").select("user_id, role, office_id, active"),
+      admin.from("clearance_offices").select("id, code, name, active").order("display_order", { ascending: true }),
+    ]);
+    if (profilesResult.error || assignmentsResult.error || officesResult.error) {
+      console.error("list-staff query failed", { profiles: profilesResult.error?.message, assignments: assignmentsResult.error?.message, offices: officesResult.error?.message });
+      return json({ error: "Could not load staff directory" }, 500);
+    }
+    const officeMap = new Map((officesResult.data ?? []).map((office) => [office.id, office.name]));
+    const rolesByUser = new Map<string, unknown[]>();
+    for (const assignment of assignmentsResult.data ?? []) {
+      const list = rolesByUser.get(assignment.user_id) ?? [];
+      list.push({ role: assignment.role, office_id: assignment.office_id, active: assignment.active, office_name: assignment.office_id ? officeMap.get(assignment.office_id) ?? null : null });
+      rolesByUser.set(assignment.user_id, list);
+    }
+    const staff = (profilesResult.data ?? []).map((item) => ({ ...item, roles: rolesByUser.get(item.user_id) ?? [] }));
+    return json({ staff, offices: officesResult.data ?? [] });
+  } catch (error) {
+    console.error("list-staff unexpected error", error);
+    return json({ error: "Unexpected server error" }, 500);
+  }
+});
+
