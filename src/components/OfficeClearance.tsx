@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../supabase';
+import { describeFunctionError } from '../functionErrors';
 
 type ClearanceComment = { id: string; comment_text: string; author_role: string; created_at: string };
 type ClearanceRequest = {
@@ -73,7 +74,7 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
     const { data, error: invokeError } = await supabase.functions.invoke('manage-clearance', {
       body: { action, payload },
     });
-    if (invokeError) throw new Error(invokeError.message || 'Clearance operation failed.');
+    if (invokeError) throw new Error(await describeFunctionError(invokeError, 'manage-clearance', 'Clearance operation failed.'));
     if (data?.error) throw new Error(String(data.error));
     if (data?.success === false) throw new Error(String(data.error || 'Clearance operation failed.'));
     return data;
@@ -223,7 +224,7 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
                     <button className="secondary-button" type="submit" disabled={Boolean(busy) || !(drafts[item.request_id] ?? '').trim()}>Add remarks</button>
                   </form>
                   <button className="primary-button clearance-clear-button" type="button" onClick={() => void perform(`clear-${item.request_id}`, 'clear', { request_id: item.request_id }, 'Clearance request marked as cleared.')} disabled={Boolean(busy) || !['requested', 'needs_attention'].includes(item.status)}>
-                    {busy === `clear-${item.request_id}` ? 'Clearing…' : 'Clear request'} <span aria-hidden="true">✓</span>
+                    {busy === `clear-${item.request_id}` ? 'Clearing…' : 'Clear request'}
                   </button>
                 </div>
               )}
@@ -248,7 +249,7 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
                   <label htmlFor={`assent-remarks-${item.session_student_id}`}>Remarks (optional)</label>
                   <textarea className="assent-remarks" id={`assent-remarks-${item.session_student_id}`} rows={2} maxLength={3000} value={assentDrafts[item.session_student_id] ?? ''} onChange={(e) => setAssentDrafts((old) => ({ ...old, [item.session_student_id]: e.target.value }))} />
                   <div className="assent-actions no-print">
-                    <button className="primary-button" type="button" disabled={Boolean(busy)} onClick={() => void perform(`assent-${item.session_student_id}`, 'final_assent', { session_student_id: item.session_student_id, status: 'assented', remarks: assentDrafts[item.session_student_id] ?? '' }, `Final Assent granted to ${item.student_name}.`)}>Grant Final Assent <span aria-hidden="true">✓</span></button>
+                    <button className="primary-button" type="button" disabled={Boolean(busy)} onClick={() => void perform(`assent-${item.session_student_id}`, 'final_assent', { session_student_id: item.session_student_id, status: 'assented', remarks: assentDrafts[item.session_student_id] ?? '' }, `Final Assent granted to ${item.student_name}.`)}>Grant Final Assent</button>
                     <button className="danger-button" type="button" disabled={Boolean(busy)} onClick={() => void perform(`decline-${item.session_student_id}`, 'final_assent', { session_student_id: item.session_student_id, status: 'declined', remarks: assentDrafts[item.session_student_id] ?? '' }, `Final Assent declined for ${item.student_name}.`)}>Decline</button>
                   </div>
                 </article>

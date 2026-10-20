@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { supabase } from '../supabase';
+import { describeFunctionError } from '../functionErrors';
 type Department={id:string;code:string;name:string;active:boolean};
 type Programme={id:string;department_id:string;code:string;name:string;cadre:string|null;active:boolean};
 type Office={id:string;code:string;name:string;description:string|null;active:boolean;display_order:number};
@@ -11,7 +12,19 @@ export default function InstitutionalSetup(){
  const reload=useCallback(async()=>{setLoading(true);setError('');const [d,p,o,s]=await Promise.all([supabase.from('departments').select('id,code,name,active').order('name'),supabase.from('programmes').select('id,department_id,code,name,cadre,active').order('name'),supabase.from('clearance_offices').select('id,code,name,description,active,display_order').order('display_order').order('name'),supabase.from('clearance_sessions').select('id,name,academic_session,opens_at,closes_at,active').order('created_at',{ascending:false})]);const e=d.error||p.error||o.error||s.error;if(e)setError(`Could not load institutional records: ${e.message}`);setDepartments((d.data??[]) as Department[]);setProgrammes((p.data??[]) as Programme[]);setOffices((o.data??[]) as Office[]);setSessions((s.data??[]) as AcademicSession[]);setLoading(false)},[]);
  useEffect(()=>{void reload()},[reload]);
  function reset(){setEditingId('');setCode('');setName('');setDepartmentId('');setCadre('');setDescription('');setDisplayOrder('100');setAcademicSession('');setOpensAt('');setClosesAt('')}
- async function act(action:string,payload:Record<string,unknown>){setSaving(true);setError('');setNotice('');const {data,error:invokeError}=await supabase.functions.invoke('manage-institutional-setup',{body:{action,payload}});setSaving(false);if(invokeError||data?.error||data?.success===false){setError(data?.error||invokeError?.message||'Could not save change');return}setNotice('Saved successfully. The change was added to the audit trail.');reset();await reload()}
+ async function act(action:string,payload:Record<string,unknown>){
+   setSaving(true);setError('');setNotice('');
+   const {data,error:invokeError}=await supabase.functions.invoke('manage-institutional-setup',{body:{action,payload}});
+   setSaving(false);
+   if(invokeError||data?.error||data?.success===false){
+     const message=invokeError
+       ? await describeFunctionError(invokeError,'manage-institutional-setup','Could not save change')
+       : (typeof data?.error==='string'?data.error:'Could not save change');
+     setError(message);
+     return;
+   }
+   setNotice('Saved successfully. The change was added to the audit trail.');reset();await reload();
+ }
  async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();if(section==='departments')await act('department_save',{id:editingId||null,code,name});else if(section==='programmes')await act('programme_save',{id:editingId||null,department_id:departmentId,code,name,cadre});else if(section==='offices')await act('office_save',{id:editingId||null,code,name,description,display_order:displayOrder});else await act('session_save',{id:editingId||null,name,academic_session:academicSession,opens_at:opensAt?new Date(opensAt).toISOString():null,closes_at:closesAt?new Date(closesAt).toISOString():null})}
  function edit(kind:Section,item:Department|Programme|Office|AcademicSession){reset();setSection(kind);setEditingId(item.id);if(kind==='departments'||kind==='programmes'||kind==='offices'){const x=item as Department|Programme|Office;setCode(x.code);setName(x.name)}if(kind==='programmes'){const x=item as Programme;setDepartmentId(x.department_id);setCadre(x.cadre??'')}if(kind==='offices'){const x=item as Office;setDescription(x.description??'');setDisplayOrder(String(x.display_order))}if(kind==='sessions'){const x=item as AcademicSession;setName(x.name);setAcademicSession(x.academic_session);setOpensAt(x.opens_at?x.opens_at.slice(0,16):'');setClosesAt(x.closes_at?x.closes_at.slice(0,16):'')}}
  const activeDepartments=departments.filter(x=>x.active),count=section==='departments'?departments.length:section==='programmes'?programmes.length:section==='offices'?offices.length:sessions.length;

@@ -1,12 +1,19 @@
 ﻿import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-const allowedOrigin = Deno.env.get("ALLOWED_ORIGIN") ?? "";
-const cors = (origin: string) => ({ "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Vary": "Origin" });
+import { corsHeaders, isAllowedOrigin, rejectOrigin } from "../_shared/cors.ts";
+
+type AuthDirectoryEntry = {
+  invited_at: string | null;
+  email_confirmed_at: string | null;
+  confirmed_at: string | null;
+  banned_until: string | null;
+};
+
 Deno.serve(async (req) => {
   const origin = req.headers.get("origin") ?? "";
-  if (!allowedOrigin || origin !== allowedOrigin) return new Response("Forbidden", { status: 403 });
-  const headers = cors(origin);
+  if (!isAllowedOrigin(origin)) return rejectOrigin(origin);
+  const headers = corsHeaders(origin);
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...headers, "Content-Type": "application/json" } });
-  if (req.method === "OPTIONS") return new Response("ok", { headers });
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
   try {
     const url = Deno.env.get("SUPABASE_URL"), anon = Deno.env.get("SUPABASE_ANON_KEY"), service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -21,12 +28,12 @@ Deno.serve(async (req) => {
     const { data: profile, error: profileError } = await admin.from("staff_profiles").select("user_id").eq("user_id", actor.id).eq("active", true).maybeSingle();
     const { data: roles, error: rolesError } = await admin.from("staff_role_assignments").select("role").eq("user_id", actor.id).eq("active", true);
     if (profileError || rolesError) {
-  console.error("list-staff permission query failed", {
-    profileError: profileError?.message,
-    rolesError: rolesError?.message
-  });
-  return json({ error: "Could not verify staff permissions" }, 500);
-}
+      console.error("list-staff permission query failed", {
+        profileError: profileError?.message,
+        rolesError: rolesError?.message
+      });
+      return json({ error: "Could not verify staff permissions" }, 500);
+    }
     if (!profile || !roles?.some((role) => role.role === "superadmin")) return json({ error: "SuperAdmin access required" }, 403);
 
     const [profilesResult, assignmentsResult, officesResult] = await Promise.all([
@@ -38,6 +45,28 @@ Deno.serve(async (req) => {
       console.error("list-staff query failed", { profiles: profilesResult.error?.message, assignments: assignmentsResult.error?.message, offices: officesResult.error?.message });
       return json({ error: "Could not load staff directory" }, 500);
     }
+
+    const authDirectory = new Map<string, AuthDirectoryEntry>();
+    let page = 1;
+    for (;;) {
+      const { data: authData, error: authError } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+      if (authError) {
+        console.error("list-staff auth query failed", { page, message: authError.message });
+        return json({ error: "Could not load staff invitation status" }, 500);
+      }
+      for (const authUser of authData?.users ?? []) {
+        authDirectory.set(authUser.id, {
+          invited_at: authUser.invited_at ?? null,
+          email_confirmed_at: authUser.email_confirmed_at ?? null,
+          confirmed_at: authUser.confirmed_at ?? null,
+          banned_until: authUser.banned_until ?? null,
+        });
+      }
+      const nextPage = authData?.nextPage ?? null;
+      if (!nextPage || nextPage === page) break;
+      page = nextPage;
+    }
+
     const officeMap = new Map((officesResult.data ?? []).map((office) => [office.id, office.name]));
     const rolesByUser = new Map<string, unknown[]>();
     for (const assignment of assignmentsResult.data ?? []) {
@@ -45,11 +74,26 @@ Deno.serve(async (req) => {
       list.push({ role: assignment.role, office_id: assignment.office_id, active: assignment.active, office_name: assignment.office_id ? officeMap.get(assignment.office_id) ?? null : null });
       rolesByUser.set(assignment.user_id, list);
     }
-    const staff = (profilesResult.data ?? []).map((item) => ({ ...item, roles: rolesByUser.get(item.user_id) ?? [] }));
+
+    const now = Date.now();
+    const staff = (profilesResult.data ?? []).map((item) => {
+      const auth = authDirectory.get(item.user_id);
+      const emailConfirmedAt = auth?.email_confirmed_at ?? auth?.confirmed_at ?? null;
+      const bannedUntil = auth?.banned_until ? Date.parse(auth.banned_until) : Number.NaN;
+      const isBanned = Number.isFinite(bannedUntil) && bannedUntil > now;
+      const status = !item.active || isBanned ? "inactive" : !auth ? "missing" : emailConfirmedAt ? "active" : "invited";
+      return {
+        ...item,
+        status,
+        invited_at: auth?.invited_at ?? null,
+        email_confirmed_at: emailConfirmedAt,
+        roles: rolesByUser.get(item.user_id) ?? [],
+      };
+    });
+
     return json({ staff, offices: officesResult.data ?? [] });
   } catch (error) {
     console.error("list-staff unexpected error", error);
     return json({ error: "Unexpected server error" }, 500);
   }
 });
-
