@@ -76,15 +76,44 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!mounted) return;
       if (!nextSession) { setSession(null); setStaff(null); setBusy(false); return; }
+      // Invitation sessions must remain on the password-setup route until the invitee sets a password.
+      if (isAcceptRoute) { setSession(nextSession); setBusy(false); return; }
       window.setTimeout(() => { if (mounted) void loadStaffContext(nextSession); }, 0);
     });
-    void supabase.auth.getSession().then(({ data, error: sessionError }) => {
+    const restoreSession = async () => {
+      // Supabase invitation emails may return implicit-flow tokens in the URL fragment,
+      // even when the client is configured for PKCE. Exchange those tokens explicitly.
+      const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const accessToken = fragment.get('access_token');
+      const refreshToken = fragment.get('refresh_token');
+      if (isAcceptRoute && fragment.get('type') === 'invite' && accessToken && refreshToken) {
+        const { data, error: inviteSessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (!mounted) return;
+        if (inviteSessionError || !data.session) {
+          setError('This invitation link is invalid or expired. Ask the SuperAdmin to send a new invitation.');
+          setBusy(false);
+          return;
+        }
+        // Remove sensitive tokens from the address bar after storing the session.
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        setSession(data.session);
+        setBusy(false);
+        return;
+      }
+      const { data, error: sessionError } = await supabase.auth.getSession();
       if (!mounted) return;
       if (sessionError) setError('Unable to restore your session. Please sign in again.');
-      if (data.session) void loadStaffContext(data.session); else setBusy(false);
-    });
+      if (data.session) {
+        if (isAcceptRoute) { setSession(data.session); setBusy(false); }
+        else void loadStaffContext(data.session);
+      } else setBusy(false);
+    };
+    void restoreSession();
     return () => { mounted = false; listener.subscription.unsubscribe(); };
-  }, [loadStaffContext]);
+  }, [isAcceptRoute, loadStaffContext]);
 
   const isSuperAdmin = staff?.roles.some((item) => item.active && item.role === 'superadmin') ?? false;
   const loadStaffList = useCallback(async () => {
@@ -173,7 +202,7 @@ export default function App() {
   async function handleAcceptInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setNotice('');
     if (!session) { setError('Invitation session is missing or expired. Reopen the latest invitation email.'); return; }
-    if (invitePassword.length < 12) { setError('Use at least 12 characters for your password.'); return; }
+    if (invitePassword.length < 8) { setError('Use at least 8 characters for your password.'); return; }
     if (invitePassword !== invitePasswordConfirm) { setError('The passwords do not match.'); return; }
     setAcceptBusy(true); const { error: updateError } = await supabase.auth.updateUser({ password: invitePassword }); setAcceptBusy(false);
     if (updateError) { setError(updateError.message); return; }
@@ -184,7 +213,7 @@ export default function App() {
   if (busy) return <main className="loading-screen"><div className="brand-mark">COHT</div><p>Checking secure staff access...</p></main>;
 
   if (isAcceptRoute) {
-    return <main className="auth-layout"><section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Set up your staff access.</h1><p>Choose a strong password to activate your invited staff account.</p></div><p className="panel-footnote">Authorised personnel only · Activity may be audited</p></section><section className="form-panel"><form className="login-card" onSubmit={handleAcceptInvite}><p className="eyebrow dark">STAFF INVITATION</p><h2>Complete your account</h2><p className="muted">Use at least 12 characters. Keep your password private.</p>{!session && <div className="alert warning">No active invitation session was found. Open the newest invitation link from your email.</div>}{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} minLength={12} required /><label htmlFor="confirm-password">Confirm password</label><input id="confirm-password" type="password" autoComplete="new-password" value={invitePasswordConfirm} onChange={(e) => setInvitePasswordConfirm(e.target.value)} minLength={12} required /><button className="primary-button" type="submit" disabled={acceptBusy || !session}>{acceptBusy ? 'Saving password...' : 'Set password and continue'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => { window.location.href = '/'; }}>Back to staff sign in</button></form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section></main>;
+    return <main className="auth-layout"><section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Set up your staff access.</h1><p>Choose a strong password to activate your invited staff account.</p></div><p className="panel-footnote">Authorised personnel only · Activity may be audited</p></section><section className="form-panel"><form className="login-card" onSubmit={handleAcceptInvite}><p className="eyebrow dark">STAFF INVITATION</p><h2>Complete your account</h2><p className="muted">Use at least 8 characters. Keep your password private.</p>{!session && <div className="alert warning">No active invitation session was found. Open the newest invitation link from your email.</div>}{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} minLength={8} required /><label htmlFor="confirm-password">Confirm password</label><input id="confirm-password" type="password" autoComplete="new-password" value={invitePasswordConfirm} onChange={(e) => setInvitePasswordConfirm(e.target.value)} minLength={8} required /><button className="primary-button" type="submit" disabled={acceptBusy || !session}>{acceptBusy ? 'Saving password...' : 'Set password and continue'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => { window.location.href = '/'; }}>Back to staff sign in</button></form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section></main>;
   }
 
   if (!session || !staff) {
