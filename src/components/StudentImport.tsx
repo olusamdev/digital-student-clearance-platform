@@ -21,8 +21,8 @@ type ImportResult = { success: boolean; batch_id?: string; total_rows: number; i
 const HEADERS = ['registration_number','full_name','department','programme','phone_number','gender','student_set','admission_year','graduation_year','permanent_address'];
 const TEMPLATE = [
   HEADERS.join(','),
-  'COHT/2026/001,"Amina Musa",CHS,DCH,08012345678,Female,2022,2026,2026,"Takum, Taraba State"',
-  'COHT/2026/002,"John James",CHS,CCH,08087654321,Male,2022,2026,2026,"Takum, Taraba State"',
+  'COHT/2026/001,"Amina Musa",CHS,DCH,08012345678,Female,2022/2023,2022,2026,"Takum, Taraba State"',
+  'COHT/2026/002,"John James",CHS,CCH,08087654321,Male,2022/2023,2022,2026,"Takum, Taraba State"',
 ].join('\r\n');
 
 function parseCsv(source: string): string[][] {
