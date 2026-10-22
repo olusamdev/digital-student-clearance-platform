@@ -73,3 +73,13 @@ Therefore, student dashboard and Provost queue cannot be tested end-to-end until
 - Do not create student accounts based only on registration number.
 - Do not claim Paystack, SMS delivery, student imports or end-to-end workflows work until tested.
 - Do not deploy the frontend or run migrations without the user's authorization.
+
+
+## Student import requirements update — 2026-10-22
+
+- The student CSV template must contain exactly two columns: `name` and `registration_number`. Sample rows only; no department, programme, phone, gender, address, or year fields in the import file.
+- Import Edge Function now validates and inserts only `full_name` and `registration_number`; duplicate registrations within a file and existing registrations are rejected. Active function deployed to DSCP Supabase as `import-students` version 3, JWT verification enabled.
+- Student portal first-time onboarding now asks for the registered name, registration number, and a phone number that the student can verify by SMS. Backend action `claim_record` links the verified phone to a unique matching student record, refuses a phone already linked to another record, and logs a claim event. The student then enters/confirm particulars in the portal, including department, programme, gender, and address. Department/programme selections are checked against active college lists and the selected programme must belong to the selected department.
+- Updated `src/components/StudentImport.tsx`, `src/components/StudentPortal.tsx`, `supabase/functions/import-students/index.ts`, and `supabase/functions/student-portal/index.ts` in GitHub main. Student portal Edge Function redeployed with JWT verification enabled. No student records imported and no live data changed by this code edit.
+- Important limitation: the claim process currently matches the official name and registration number and verifies phone ownership by SMS. This is not equivalent to an independent identity document check; monitor first-time claims and provide a college correction/recovery process.
+- Next: when network connectivity to GitHub returns, pull main locally, run `npm run build`, deploy the frontend with `npx wrangler deploy`, then test using one dummy student row. Verify the template headers are exactly `name,registration_number`, validate/import one test record, claim it using a test phone, and complete the student profile. Do not import the full register until the end-to-end test passes.
