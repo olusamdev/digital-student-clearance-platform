@@ -11,12 +11,12 @@ type PreviewResult = { valid_rows: number; invalid_rows: number; duplicate_rows:
 type ImportResult = { success: boolean; batch_id?: string; total_rows: number; inserted_rows: number; rejected_rows: number; issues?: RowIssue[] };
 type ImportBatch = { id: string; original_filename: string; total_rows: number; inserted_rows: number; updated_rows: number; rejected_rows: number; status: string; created_at: string; completed_at: string | null };
 
-const HEADERS = ['registration_number','full_name','department','programme','phone_number','gender','student_set','admission_year','graduation_year','permanent_address'];
+const HEADERS = ['name', 'registration_number'];
 const TEMPLATE = [
   HEADERS.join(','),
-  'COHT/2026/001,"Amina Musa",CHS,DCH,08012345678,Female,2022/2023,2022,2026,"Takum, Taraba State"',
-  'COHT/2026/002,"John James",CHS,CCH,08087654321,Male,2022/2023,2022,2026,"Takum, Taraba State"',
-].join('\r\n');
+  'Amina Musa,COHT/2026/001',
+  'John James,COHT/2026/002',
+].join('\\r\\n');
 
 function parseCsv(source: string): string[][] {
   const rows: string[][] = [];
