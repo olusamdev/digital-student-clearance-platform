@@ -102,8 +102,17 @@ Deno.serve(async (req) => {
       const fullName = text(payload.full_name, 160);
       const gender = text(payload.gender, 40);
       const address = text(payload.permanent_address, 500);
+      const departmentId = text(payload.department_id, 80);
+      const programmeId = text(payload.programme_id, 80);
       if (fullName.length < 2) return json({ error: "Enter your full name." }, 400, origin);
-      const { error: updateStudentError } = await admin.from("student_records").update({ full_name: fullName, gender: gender || null, permanent_address: address || null, profile_completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", student.id);
+      if (!departmentId || !programmeId) return json({ error: "Select your department and programme." }, 400, origin);
+      const [{ data: department, error: departmentError }, { data: programme, error: programmeError }] = await Promise.all([
+        admin.from("departments").select("id,active").eq("id", departmentId).maybeSingle(),
+        admin.from("programmes").select("id,department_id,active").eq("id", programmeId).maybeSingle(),
+      ]);
+      if (departmentError || programmeError) return json({ error: "Could not validate your department and programme." }, 500, origin);
+      if (!department?.active || !programme?.active || programme.department_id !== department.id) return json({ error: "Choose an active programme under your selected department." }, 400, origin);
+      const { error: updateStudentError } = await admin.from("student_records").update({ full_name: fullName, department_id: department.id, programme_id: programme.id, gender: gender || null, permanent_address: address || null, profile_completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", student.id);
       if (updateStudentError) {
         console.error("student-portal profile update failed", { code: updateStudentError.code });
         return json({ error: "Could not save your particulars." }, 500, origin);
@@ -200,8 +209,15 @@ Deno.serve(async (req) => {
     });
     const { data: dept } = student.department_id ? await admin.from("departments").select("name").eq("id", student.department_id).maybeSingle() : { data: null };
     const { data: programme } = student.programme_id ? await admin.from("programmes").select("name").eq("id", student.programme_id).maybeSingle() : { data: null };
+    const [{ data: departments, error: departmentsError }, { data: programmes, error: programmesError }] = await Promise.all([
+      admin.from("departments").select("id,code,name").eq("active", true).order("name"),
+      admin.from("programmes").select("id,department_id,code,name").eq("active", true).order("name"),
+    ]);
+    if (departmentsError || programmesError) return json({ error: "Could not load department and programme options." }, 500, origin);
     return json({
-      student: { id: student.id, registration_number: student.registration_number, full_name: student.full_name, gender: student.gender, permanent_address: student.permanent_address, department: dept?.name ?? null, programme: programme?.name ?? null, phone_number: student.phone_number },
+      student: { id: student.id, registration_number: student.registration_number, full_name: student.full_name, gender: student.gender, permanent_address: student.permanent_address, department_id: student.department_id, programme_id: student.programme_id, department: dept?.name ?? null, programme: programme?.name ?? null, phone_number: student.phone_number },
+      departments: departments ?? [],
+      programmes: programmes ?? [],
       clearance_fee_kobo: feeKobo,
       sessions: sessionRows,
     }, 200, origin);
