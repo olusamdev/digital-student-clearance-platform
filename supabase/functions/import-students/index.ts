@@ -35,7 +35,7 @@ async function prepareRows(admin: ReturnType<typeof createClient>, rawRows: unkn
     if (!registration) messages.push("Registration number is required.");
     if (fullName.length < 2) messages.push("Name must contain at least 2 characters.");
     const previous = registration ? seen.get(registration) : undefined;
-    if (previous !== undefined) messages.push(\`Duplicate registration number in this file (first appears on row \${previous}).\`);
+    if (previous !== undefined) messages.push(`Duplicate registration number in this file (first appears on row ${previous}).`);
     else if (registration) seen.set(registration, rowNumber);
     if (messages.length) { issues.push({ row: rowNumber, registration_number: registration || undefined, message: messages.join(" ") }); return; }
     prepared.push({ registration_number: registration, full_name: fullName });
