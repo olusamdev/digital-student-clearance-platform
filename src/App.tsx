@@ -5,6 +5,7 @@ import { describeFunctionError } from './functionErrors';
 import InstitutionalSetup from './components/InstitutionalSetup';
 import OfficeClearance from './components/OfficeClearance';
 import ProvostPortal from './components/ProvostPortal';
+import StudentPortal from './components/StudentPortal';
 
 type StaffProfile = { user_id: string; full_name: string; email: string | null; staff_number: string | null; active: boolean; created_at?: string };
 type RoleAssignment = { role: string; office_id: string | null; active: boolean; office_name?: string | null };
@@ -57,6 +58,7 @@ export default function App() {
   const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
   const isAcceptRoute = currentPath === '/accept-invite';
   const isProvostRoute = currentPath === '/provost';
+  const isStudentRoute = currentPath === '/student';
 
   const loadStaffContext = useCallback(async (currentSession: Session) => {
     setBusy(true); setError('');
@@ -80,7 +82,7 @@ export default function App() {
       if (!mounted) return;
       if (!nextSession) { setSession(null); setStaff(null); setBusy(false); return; }
       // Invitation sessions must remain on the password-setup route until the invitee sets a password.
-      if (isAcceptRoute) { setSession(nextSession); setBusy(false); return; }
+      if (isAcceptRoute || isStudentRoute) { setSession(nextSession); setBusy(false); return; }
       window.setTimeout(() => { if (mounted) void loadStaffContext(nextSession); }, 0);
     });
     const restoreSession = async () => {
@@ -110,7 +112,7 @@ export default function App() {
       if (!mounted) return;
       if (sessionError) setError('Unable to restore your session. Please sign in again.');
       if (data.session) {
-        if (isAcceptRoute) { setSession(data.session); setBusy(false); }
+        if (isAcceptRoute || isStudentRoute) { setSession(data.session); setBusy(false); }
         else void loadStaffContext(data.session);
       } else setBusy(false);
     };
@@ -214,6 +216,8 @@ export default function App() {
 
   const activeRoles = staff?.roles.filter((item) => item.active) ?? [];
   if (busy) return <main className="loading-screen"><div className="brand-mark">COHT</div><p>Checking secure staff access...</p></main>;
+
+  if (isStudentRoute) return <StudentPortal />;
 
   if (isAcceptRoute) {
     return <main className="auth-layout"><section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Set up your staff access.</h1><p>Choose a strong password to activate your invited staff account.</p></div><p className="panel-footnote">Authorised personnel only · Activity may be audited</p></section><section className="form-panel"><form className="login-card" onSubmit={handleAcceptInvite}><p className="eyebrow dark">STAFF INVITATION</p><h2>Complete your account</h2><p className="muted">Use at least 8 characters. Keep your password private.</p>{!session && <div className="alert warning">No active invitation session was found. Open the newest invitation link from your email.</div>}{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} minLength={8} required /><label htmlFor="confirm-password">Confirm password</label><input id="confirm-password" type="password" autoComplete="new-password" value={invitePasswordConfirm} onChange={(e) => setInvitePasswordConfirm(e.target.value)} minLength={8} required /><button className="primary-button" type="submit" disabled={acceptBusy || !session}>{acceptBusy ? 'Saving password...' : 'Set password and continue'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => { window.location.href = '/'; }}>Back to staff sign in</button></form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section></main>;
