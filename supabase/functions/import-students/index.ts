@@ -133,6 +133,11 @@ Deno.serve(async (req) => {
 
     const body=await req.json().catch(()=>({})) as Json;
     const action=String(body.action??"");
+    if(action==="history") {
+      const {data:history,error:historyError}=await admin.from("import_batches").select("id,original_filename,total_rows,inserted_rows,updated_rows,rejected_rows,status,created_at,completed_at").order("created_at",{ascending:false}).limit(20);
+      if(historyError) return json({error:"Could not load student import history."},500,origin);
+      return json({history:history??[]},200,origin);
+    }
     const rows=body.rows;
     if(action!=="validate"&&action!=="import") return json({error:"Unsupported import action."},400,origin);
     if(!Array.isArray(rows)) return json({error:"Student rows must be supplied as an array."},400,origin);
