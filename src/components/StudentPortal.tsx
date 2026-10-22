@@ -23,6 +23,8 @@ const statusText = (value: string) => value.replaceAll('_', ' ');
 export default function StudentPortal() {
   const [session, setSession] = useState<Session | null>(null);
   const [phone, setPhone] = useState('');
+  const [registrationNumber, setRegistrationNumber] = useState('');
+  const [claimName, setClaimName] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
@@ -78,8 +80,15 @@ export default function StudentPortal() {
     event.preventDefault(); setAuthBusy(true); setError(''); setNotice('');
     const normalized = toE164(phone);
     const { data, error: verifyError } = await supabase.auth.verifyOtp({ phone: normalized, token: otp.trim(), type: 'sms' });
+    if (verifyError || !data.session) { setAuthBusy(false); setError('Verification failed. Check the code or request a new one.'); return; }
+    const { data: claimResult, error: claimError } = await supabase.functions.invoke('student-portal', { body: { action: 'claim_record', payload: { registration_number: registrationNumber.trim(), full_name: claimName.trim() } } });
     setAuthBusy(false);
-    if (verifyError || !data.session) { setError('Verification failed. Check the code or request a new one.'); return; }
+    if (claimError || claimResult?.error) {
+      await supabase.auth.signOut();
+      setSession(null);
+      setError(claimError ? await describeFunctionError(claimError, 'student-portal', 'Could not link your student record.') : String(claimResult.error));
+      return;
+    }
     setSession(data.session); setNotice('Phone verified. Loading your college record…');
     await loadDashboard();
   }
@@ -126,9 +135,13 @@ export default function StudentPortal() {
       <section className="form-panel">
         <form className="login-card" onSubmit={otpSent ? verifyOtp : sendOtp}>
           <p className="eyebrow dark">STUDENT PORTAL</p><h2>{otpSent ? 'Verify your phone' : 'Student sign in'}</h2>
-          <p className="muted">Use the phone number recorded by the college. A registration number alone is not sufficient to access a student record.</p>
+          <p className="muted">Enter the name and registration number on the college register, then verify a phone number you can access. You will add your remaining particulars after signing in.</p>
           {error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}
-          <label htmlFor="student-phone">Mobile phone number</label>
+          <label htmlFor="student-registration">Registration number</label>
+          <input id="student-registration" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} maxLength={100} required disabled={otpSent} placeholder="Your official registration number" />
+          <label htmlFor="student-claim-name">Name as shown on the college register</label>
+          <input id="student-claim-name" value={claimName} onChange={(e) => setClaimName(e.target.value)} maxLength={160} required disabled={otpSent} placeholder="Your registered name" />
+          <label htmlFor="student-phone">Your mobile phone number</label>
           <input id="student-phone" type="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="08012345678" required disabled={otpSent} />
           {otpSent && <><label htmlFor="student-otp">SMS verification code</label><input id="student-otp" inputMode="numeric" autoComplete="one-time-code" value={otp} onChange={(e) => setOtp(e.target.value)} minLength={6} maxLength={8} required placeholder="Enter code" /><button className="text-button" type="button" onClick={() => { setOtpSent(false); setOtp(''); setError(''); }}>Change phone number</button></>}
           <button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Please wait…' : otpSent ? 'Verify and continue' : 'Send verification code'}<span aria-hidden="true">→</span></button>
@@ -144,7 +157,7 @@ export default function StudentPortal() {
       <section className="welcome-block"><p className="eyebrow dark">STUDENT WORKSPACE</p><h1>{dashboard ? `Welcome, ${dashboard.student.full_name}` : 'Your student clearance'}</h1><p className="muted">View your particulars, payment gate, office decisions, and final clearance status.</p></section>
       {error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}
       {loading && <div className="panel"><p className="muted">Loading your verified college record…</p></div>}
-      {!loading && !dashboard && <div className="panel"><h2>Student record not available</h2><p className="muted">The verified phone number did not resolve to one unique college record, or no clearance session has been assigned. Contact the college clearance office; do not create another account.</p><button className="secondary-button" type="button" onClick={() => void loadDashboard()}>Try again</button></div>}
+      {!loading && !dashboard && <div className="panel"><h2>Student record not available</h2><p className="muted">Your verified phone number could not be linked to a matching name and registration number, or no clearance session has been assigned. Check your details or contact the college clearance office.</p><button className="secondary-button" type="button" onClick={() => void loadDashboard()}>Try again</button></div>}
       {dashboard && <>
         <section className="content-grid">
           <article className="panel account-panel"><div className="panel-heading"><div><p className="eyebrow dark">OFFICIAL RECORD</p><h2>Student particulars</h2></div><span className="status-pill"><span /> Verified phone</span></div>
