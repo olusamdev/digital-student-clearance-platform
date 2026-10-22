@@ -16,7 +16,7 @@ const TEMPLATE = [
   HEADERS.join(','),
   'Amina Musa,COHT/2026/001',
   'John James,COHT/2026/002',
-].join('\\r\\n');
+].join('\r\n');
 
 function parseCsv(source: string): string[][] {
   const rows: string[][] = [];
