@@ -60,14 +60,14 @@ Deno.serve(async (req) => {
 
     if (action === "claim_record") {
       const registrationNumber = text(payload.registration_number, 100).toUpperCase();
-      const claimedName = text(payload.full_name, 160).replace(/\\s+/g, " ");
+      const claimedName = text(payload.full_name, 160).replace(/\s+/g, " ");
       if (!registrationNumber || claimedName.length < 2) return json({ error: "Enter your official registration number and the name on the college register." }, 400, origin);
       const { data: candidates, error: claimLookupError } = await admin.from("student_records")
         .select("id,registration_number,full_name,phone_number")
         .eq("registration_number", registrationNumber).limit(2);
       if (claimLookupError) return json({ error: "Could not verify your college record. Please try again." }, 500, origin);
       const candidate = (candidates ?? []).length === 1 ? candidates![0] : null;
-      if (!candidate || candidate.full_name.trim().toLocaleLowerCase().replace(/\\s+/g, " ") !== claimedName.toLocaleLowerCase().replace(/\\s+/g, " ")) {
+      if (!candidate || candidate.full_name.trim().toLocaleLowerCase().replace(/\s+/g, " ") !== claimedName.toLocaleLowerCase().replace(/\s+/g, " ")) {
         return json({ error: "The name and registration number did not match the college register. Check the details or contact the college." }, 403, origin);
       }
       const { data: phoneOwner, error: phoneOwnerError } = await admin.from("student_records")
