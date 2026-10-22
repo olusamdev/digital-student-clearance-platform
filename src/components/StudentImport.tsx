@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { supabase } from '../supabase';
 import { describeFunctionError } from '../functionErrors';
 
@@ -17,6 +17,7 @@ type StudentImportRow = {
 type RowIssue = { row: number; registration_number?: string; message: string };
 type PreviewResult = { valid_rows: number; invalid_rows: number; duplicate_rows: number; rows: StudentImportRow[]; issues: RowIssue[] };
 type ImportResult = { success: boolean; batch_id?: string; total_rows: number; inserted_rows: number; rejected_rows: number; issues?: RowIssue[] };
+type ImportBatch = { id: string; original_filename: string; total_rows: number; inserted_rows: number; updated_rows: number; rejected_rows: number; status: string; created_at: string; completed_at: string | null };
 
 const HEADERS = ['registration_number','full_name','department','programme','phone_number','gender','student_set','admission_year','graduation_year','permanent_address'];
 const TEMPLATE = [
@@ -90,11 +91,19 @@ export default function StudentImport() {
   const [issues, setIssues] = useState<RowIssue[]>([]);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [history, setHistory] = useState<ImportBatch[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
   const canImport = useMemo(() => Boolean(preview && preview.invalid_rows === 0 && preview.duplicate_rows === 0 && rows.length > 0 && !busy), [preview, rows.length, busy]);
+
+  const loadHistory = async () => {
+    const { data, error: invokeError } = await supabase.functions.invoke('import-students', { body: { action: 'history' } });
+    if (!invokeError && Array.isArray(data?.history)) setHistory(data.history as ImportBatch[]);
+  };
+  useEffect(() => { void loadHistory(); }, []);
+
 
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -129,6 +138,7 @@ export default function StudentImport() {
     if (invokeError || data?.error) { setError(invokeError ? await describeFunctionError(invokeError, 'import-students', 'Student import failed.') : String(data.error)); return; }
     const imported = data as ImportResult;
     setResult(imported); setIssues((imported.issues ?? []) as RowIssue[]);
+    await loadHistory();
     setNotice(imported.success ? `Successfully imported ${imported.inserted_rows.toLocaleString()} student record(s).` : 'Import did not complete. Review the error report before retrying.');
     if (imported.success) { setRows([]); setPreview(null); setFileName(''); if (inputRef.current) inputRef.current.value = ''; }
   }
@@ -155,6 +165,7 @@ export default function StudentImport() {
     {notice && <div className="alert success" role="status">{notice}</div>}
     {issues.length > 0 && <article className="panel"><div className="panel-heading"><div><p className="eyebrow dark">VALIDATION REPORT</p><h2>{issues.length} issue(s) found</h2></div></div><div className="staff-table-wrap"><table className="staff-table"><thead><tr><th>CSV row</th><th>Registration number</th><th>Issue</th></tr></thead><tbody>{issues.slice(0,100).map((issue,i) => <tr key={`${issue.row}-${i}`}><td>{issue.row}</td><td>{issue.registration_number || '—'}</td><td>{issue.message}</td></tr>)}</tbody></table></div>{issues.length > 100 && <p className="field-note">Showing first 100 of {issues.length} issues.</p>}</article>}
     {result && <article className="panel"><p className="eyebrow dark">IMPORT RESULT</p><h2>{result.success ? 'Import complete' : 'Import failed'}</h2><div className="clearance-meta"><span><strong>Total rows</strong>{result.total_rows}</span><span><strong>Inserted</strong>{result.inserted_rows}</span><span><strong>Rejected</strong>{result.rejected_rows}</span><span><strong>Batch reference</strong>{result.batch_id ? result.batch_id.slice(0,8) : '—'}</span></div></article>}
+    <article className="panel"><div className="panel-heading"><div><p className="eyebrow dark">AUDITABLE IMPORTS</p><h2>Recent import history</h2></div><button className="secondary-button" type="button" onClick={() => void loadHistory()}>Refresh history</button></div>{history.length===0?<p className="muted">No student import batches have been recorded yet.</p>:<div className="staff-table-wrap"><table className="staff-table"><thead><tr><th>File / date</th><th>Rows</th><th>Inserted</th><th>Rejected</th><th>Status</th></tr></thead><tbody>{history.map((batch)=><tr key={batch.id}><td><strong>{batch.original_filename}</strong><small>{new Date(batch.created_at).toLocaleString()} · {batch.id.slice(0,8)}</small></td><td>{batch.total_rows}</td><td>{batch.inserted_rows}</td><td>{batch.rejected_rows}</td><td><span className={"directory-status " + (batch.status==="imported"?"active":batch.status==="failed"?"inactive":"invited")}>{batch.status}</span></td></tr>)}</tbody></table></div>}</article>
     <p className="dashboard-footnote">Import requires an active SuperAdmin session. Every batch is recorded in the import history and audit log.</p>
   </section>;
 }
