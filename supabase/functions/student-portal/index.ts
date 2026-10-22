@@ -53,6 +53,37 @@ Deno.serve(async (req) => {
 
     const normalized = canonicalPhone(user.phone);
     if (!normalized) return json({ error: "The verified phone number format is not supported. Contact the college." }, 400, origin);
+    const body = await req.json().catch(() => ({})) as Json;
+    const action = String(body.action ?? "");
+    const payload = body.payload && typeof body.payload === "object" && body.payload !== null ? body.payload as Json : {};
+    const sessionStudentId = text(payload.session_student_id, 80);
+
+    if (action === "claim_record") {
+      const registrationNumber = text(payload.registration_number, 100).toUpperCase();
+      const claimedName = text(payload.full_name, 160).replace(/\\s+/g, " ");
+      if (!registrationNumber || claimedName.length < 2) return json({ error: "Enter your official registration number and the name on the college register." }, 400, origin);
+      const { data: candidates, error: claimLookupError } = await admin.from("student_records")
+        .select("id,registration_number,full_name,phone_number")
+        .eq("registration_number", registrationNumber).limit(2);
+      if (claimLookupError) return json({ error: "Could not verify your college record. Please try again." }, 500, origin);
+      const candidate = (candidates ?? []).length === 1 ? candidates![0] : null;
+      if (!candidate || candidate.full_name.trim().toLocaleLowerCase().replace(/\\s+/g, " ") !== claimedName.toLocaleLowerCase().replace(/\\s+/g, " ")) {
+        return json({ error: "The name and registration number did not match the college register. Check the details or contact the college." }, 403, origin);
+      }
+      const { data: phoneOwner, error: phoneOwnerError } = await admin.from("student_records")
+        .select("id").in("phone_number", phoneVariants(normalized)).neq("id", candidate.id).limit(1).maybeSingle();
+      if (phoneOwnerError) return json({ error: "Could not verify this phone number. Please try again." }, 500, origin);
+      if (phoneOwner) return json({ error: "This phone number is already linked to another student record. Contact the college." }, 409, origin);
+      const currentPhone = canonicalPhone(String(candidate.phone_number ?? ""));
+      if (currentPhone && currentPhone !== normalized) return json({ error: "This student record is already linked to a different phone number. Contact the college to update it." }, 409, origin);
+      const { error: claimUpdateError } = await admin.from("student_records")
+        .update({ phone_number: normalized, updated_at: new Date().toISOString() })
+        .eq("id", candidate.id);
+      if (claimUpdateError) return json({ error: "Could not link your phone to the student record. Please try again." }, 500, origin);
+      await admin.from("audit_events").insert({ actor_student_id: candidate.id, event_type: "student.record_claimed", entity_type: "student_record", entity_id: candidate.id, details: { phone_verified: true } });
+      return json({ success: true }, 200, origin);
+    }
+
     const { data: possibleStudents, error: studentError } = await admin.from("student_records")
       .select("id,registration_number,full_name,department_id,programme_id,gender,permanent_address,phone_number")
       .in("phone_number", phoneVariants(normalized));
@@ -63,11 +94,6 @@ Deno.serve(async (req) => {
     const matched = (possibleStudents ?? []).filter((row) => canonicalPhone(String(row.phone_number ?? "")) === normalized);
     if (matched.length !== 1) return json({ error: "This verified phone number does not match one unique college student record. Contact the college clearance office." }, 403, origin);
     const student = matched[0] as any;
-
-    const body = await req.json().catch(() => ({})) as Json;
-    const action = String(body.action ?? "");
-    const payload = body.payload && typeof body.payload === "object" && body.payload !== null ? body.payload as Json : {};
-    const sessionStudentId = text(payload.session_student_id, 80);
 
     if (action === "confirm_profile") {
       if (!sessionStudentId) return json({ error: "Clearance session is required." }, 400, origin);
