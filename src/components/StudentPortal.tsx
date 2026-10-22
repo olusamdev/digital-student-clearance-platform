@@ -3,10 +3,12 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 import { describeFunctionError } from '../functionErrors';
 
-type Student = { id: string; registration_number: string; full_name: string; gender: string | null; permanent_address: string | null; department: string | null; programme: string | null; phone_number: string | null };
+type Student = { id: string; registration_number: string; full_name: string; gender: string | null; permanent_address: string | null; department_id: string | null; programme_id: string | null; department: string | null; programme: string | null; phone_number: string | null };
+type DepartmentOption = { id: string; code: string; name: string };
+type ProgrammeOption = { id: string; department_id: string; code: string; name: string };
 type Requirement = { id: string; office_name: string; office_code: string; instructions: string | null; required: boolean; status: string; requested_at: string | null; decision_at: string | null; comments: { id: string; comment_text: string; author_role: string; created_at: string }[] };
 type StudentSession = { id: string; session_id: string; session_name: string; academic_session: string | null; active: boolean; opens_at: string | null; closes_at: string | null; payment_unlocked_at: string | null; profile_confirmed_at: string | null; final_assent: string; final_assent_remarks: string | null; completed_at: string | null; requirements: Requirement[] };
-type Dashboard = { student: Student; clearance_fee_kobo: number; sessions: StudentSession[] };
+type Dashboard = { student: Student; clearance_fee_kobo: number; sessions: StudentSession[]; departments: DepartmentOption[]; programmes: ProgrammeOption[] };
 
 function toE164(value: string) {
   const raw = value.trim();
@@ -36,6 +38,8 @@ export default function StudentPortal() {
   const [fullName, setFullName] = useState('');
   const [gender, setGender] = useState('');
   const [address, setAddress] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
+  const [programmeId, setProgrammeId] = useState('');
 
   const loadDashboard = useCallback(async () => {
     setLoading(true); setError('');
@@ -51,6 +55,8 @@ export default function StudentPortal() {
     setFullName(result.student.full_name || '');
     setGender(result.student.gender || '');
     setAddress(result.student.permanent_address || '');
+    setDepartmentId(result.student.department_id || '');
+    setProgrammeId(result.student.programme_id || '');
   }, []);
 
   useEffect(() => {
@@ -170,7 +176,7 @@ export default function StudentPortal() {
           <div className="clearance-card-header"><div><p className="eyebrow dark">CLEARANCE SESSION</p><h2>{item.academic_session || item.session_name}</h2><p className="clearance-reg">{dashboard.student.registration_number}</p></div><span className={`clearance-status status-${item.final_assent === 'assented' ? 'cleared' : item.final_assent === 'declined' ? 'needs_attention' : 'requested'}`}>{item.final_assent === 'assented' ? 'Completed' : item.final_assent === 'declined' ? 'Assent declined' : item.final_assent === 'revoked' ? 'Assent revoked' : item.active ? 'In progress' : 'Session closed'}</span></div>
           {item.final_assent_remarks && <p className="clearance-instructions">Provost remarks: {item.final_assent_remarks}</p>}
           <div className="clearance-meta"><span><strong>Payment gate</strong>{item.payment_unlocked_at ? `Verified ${dateText(item.payment_unlocked_at)}` : 'Not verified'}</span><span><strong>Profile</strong>{item.profile_confirmed_at ? 'Confirmed' : 'Confirmation required'}</span><span><strong>Final decision</strong>{item.final_assent}</span><span><strong>Completed</strong>{dateText(item.completed_at)}</span></div>
-          {!item.profile_confirmed_at && <form className="management-form" onSubmit={(e) => void confirmProfile(e, item)}><h3>Confirm your particulars</h3><p className="muted">Registration number, department, and programme are college-controlled and cannot be edited here. Contact the college to correct them.</p><label htmlFor={`student-name-${item.id}`}>Full name</label><input id={`student-name-${item.id}`} value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={160} required /><label htmlFor={`student-gender-${item.id}`}>Gender</label><select id={`student-gender-${item.id}`} value={gender} onChange={(e) => setGender(e.target.value)}><option value="">Select</option><option value="Female">Female</option><option value="Male">Male</option><option value="Prefer not to say">Prefer not to say</option></select><label htmlFor={`student-address-${item.id}`}>Permanent address</label><textarea id={`student-address-${item.id}`} rows={2} maxLength={500} value={address} onChange={(e) => setAddress(e.target.value)} /><button className="primary-button" type="submit" disabled={Boolean(busy)}>{busy === 'confirm_profile' ? 'Saving…' : 'Save and confirm particulars'}</button></form>}
+          {!item.profile_confirmed_at && <form className="management-form" onSubmit={(e) => void confirmProfile(e, item)}><h3>Confirm your particulars</h3><p className="muted">Registration number is college-controlled. Complete your remaining particulars carefully.</p><label htmlFor={`student-name-${item.id}`}>Full name</label><input id={`student-name-${item.id}`} value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={160} required /><label htmlFor={`student-gender-${item.id}`}>Gender</label><select id={`student-gender-${item.id}`} value={gender} onChange={(e) => setGender(e.target.value)}><option value="">Select</option><option value="Female">Female</option><option value="Male">Male</option><option value="Prefer not to say">Prefer not to say</option></select><label htmlFor={`student-address-${item.id}`}>Permanent address</label><textarea id={`student-address-${item.id}`} rows={2} maxLength={500} value={address} onChange={(e) => setAddress(e.target.value)} /><button className="primary-button" type="submit" disabled={Boolean(busy)}>{busy === 'confirm_profile' ? 'Saving…' : 'Save and confirm particulars'}</button></form>}
           <div className="clearance-section-heading"><div><h3>Office requirements</h3><p className="muted">Track each required office's decision and remarks.</p></div><span className="role-count">{item.requirements.filter((r) => r.status === 'cleared').length}/{item.requirements.filter((r) => r.required).length}</span></div>
           {!item.requirements.length ? <p className="muted">Requirements have not been configured for this session.</p> : <div className="clearance-request-list">{item.requirements.map((req) => <article className="panel" key={req.id}><div className="clearance-card-header"><div><h3>{req.office_name}</h3><p className="clearance-reg">{req.office_code}</p></div><span className={`clearance-status status-${req.status}`}>{statusText(req.status)}</span></div>{req.instructions && <p className="clearance-instructions">{req.instructions}</p>}{req.comments.map((c) => <div className="clearance-comment" key={c.id}><p>{c.comment_text}</p><small>{c.author_role.replaceAll('_', ' ')} · {dateText(c.created_at)}</small></div>)}</article>)}</div>}
           {item.final_assent !== 'assented' && <button className="primary-button" type="button" disabled={Boolean(busy) || !item.payment_unlocked_at || !item.profile_confirmed_at || !item.active} onClick={() => void requestClearance(item)}>{busy === 'request_clearance' ? 'Submitting…' : 'Submit clearance requests'}</button>}
