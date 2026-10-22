@@ -44,6 +44,13 @@ Deno.serve(async (req) => {
     if (authError || !user || !user.phone || !user.phone_confirmed_at) return json({ error: "Verify your phone number before accessing student records." }, 401, origin);
 
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
+    // A staff identity must never be treated as a student identity, even if a phone number is shared.
+    const [{ data: staffProfile }, { data: staffAssignment }] = await Promise.all([
+      admin.from("staff_profiles").select("user_id").eq("user_id", user.id).maybeSingle(),
+      admin.from("staff_role_assignments").select("user_id").eq("user_id", user.id).eq("active", true).limit(1).maybeSingle(),
+    ]);
+    if (staffProfile || staffAssignment) return json({ error: "Staff accounts cannot access the student portal. Sign out and use the staff workspace." }, 403, origin);
+
     const normalized = canonicalPhone(user.phone);
     if (!normalized) return json({ error: "The verified phone number format is not supported. Contact the college." }, 400, origin);
     const { data: possibleStudents, error: studentError } = await admin.from("student_records")
