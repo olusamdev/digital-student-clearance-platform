@@ -56,6 +56,18 @@ Therefore, student dashboard and Provost queue cannot be tested end-to-end until
 9. Only after local build and controlled tests pass, deploy frontend using `npx wrangler deploy`; then verify `/student`, `/provost`, staff portal and Registrar portal on production.
 10. Update this handoff after the next work session with actual build/test/deployment results.
 
+
+## Student-record import system — 2026-10-22
+- Added `src/components/StudentImport.tsx` to the SuperAdmin dashboard, gated by the existing active SuperAdmin role.
+- Added downloadable CSV UTF-8 template with required columns `registration_number,full_name,department,programme`; optional columns: `phone_number,gender,student_set,admission_year,graduation_year,permanent_address`.
+- CSV parser supports quoted commas, escaped quotes and multiline quoted cells; file max 5 MB and 1,000 rows per batch.
+- Added `supabase/functions/import-students/index.ts`, deployed to the DSCP project as ACTIVE version 2 with `verify_jwt=true` and shared CORS bundled.
+- Server verifies the signed-in active staff profile and SuperAdmin role. It validates department/programme code or name, required fields, gender/year formats, duplicates within the CSV, and existing registration numbers.
+- Import does not overwrite existing registration numbers. A valid batch is inserted in one database insert statement; failed insert updates the batch to failed and returns an error report. Successful batches record counts in `import_batches` and add an `audit_events` entry.
+- Added recent import history (latest 20 batches) to the SuperAdmin import panel.
+- Frontend source committed to `main`; it has NOT been built locally or deployed to Cloudflare in this session. Backend function is deployed. Do not claim end-to-end import works until a controlled CSV test succeeds.
+- Suggested test: download template, import a few dummy records using active department/programme codes, verify import history, then test a duplicate registration number and a quoted address containing a comma. Do not import live student data until the template and validation have been tested.
+
 ## Safety boundaries
 - Do not expose Supabase service-role keys or secrets.
 - Do not create student accounts based only on registration number.
