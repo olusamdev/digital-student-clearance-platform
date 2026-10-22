@@ -5,14 +5,6 @@ import { describeFunctionError } from '../functionErrors';
 type StudentImportRow = {
   registration_number: string;
   full_name: string;
-  department: string;
-  programme: string;
-  phone_number?: string;
-  gender?: string;
-  student_set?: string;
-  admission_year?: string | number;
-  graduation_year?: string | number;
-  permanent_address?: string;
 };
 type RowIssue = { row: number; registration_number?: string; message: string };
 type PreviewResult = { valid_rows: number; invalid_rows: number; duplicate_rows: number; rows: StudentImportRow[]; issues: RowIssue[] };
@@ -55,7 +47,9 @@ function readCsv(source: string): StudentImportRow[] {
   const parsed = parseCsv(source);
   if (parsed.length < 2) throw new Error('The CSV must contain a header row and at least one student row.');
   const header = parsed[0].map((h) => h.trim().toLowerCase().replace(/[\s-]+/g, '_'));
-  const missing = ['registration_number','full_name','department','programme'].filter((h) => !header.includes(h));
+  const nameHeader = header.includes('name') ? 'name' : header.includes('full_name') ? 'full_name' : '';
+  const missing = ['registration_number'].filter((h) => !header.includes(h));
+  if (!nameHeader) missing.push('name');
   if (missing.length) throw new Error(`Missing required column(s): ${missing.join(', ')}. Download the template for the exact column names.`);
   if (header.length !== new Set(header).size) throw new Error('The CSV contains duplicate column headings. Correct the header row and retry.');
   return parsed.slice(1).map((cells) => {
@@ -63,15 +57,7 @@ function readCsv(source: string): StudentImportRow[] {
     header.forEach((name, index) => { obj[name] = (cells[index] ?? '').trim(); });
     return {
       registration_number: obj.registration_number ?? '',
-      full_name: obj.full_name ?? '',
-      department: obj.department ?? '',
-      programme: obj.programme ?? '',
-      phone_number: obj.phone_number ?? '',
-      gender: obj.gender ?? '',
-      student_set: obj.student_set ?? '',
-      admission_year: obj.admission_year ?? '',
-      graduation_year: obj.graduation_year ?? '',
-      permanent_address: obj.permanent_address ?? '',
+      full_name: obj[nameHeader] ?? '',
     };
   });
 }
@@ -153,12 +139,12 @@ export default function StudentImport() {
           <input ref={inputRef} id="student-import-file" type="file" accept=".csv,text/csv" onChange={(e) => void chooseFile(e)} disabled={busy} />
           {fileName && <p className="field-note">Selected: <strong>{fileName}</strong> · {rows.length.toLocaleString()} row(s) loaded</p>}
           <button className="secondary-button" type="button" onClick={() => void validateRows()} disabled={!rows.length || busy}>{busy ? 'Please wait…' : 'Validate records'}</button>
-          <p className="field-note">CSV UTF-8 only · Maximum 1,000 rows and 5 MB per import. Fields containing commas must be quoted. The parser supports quoted commas, quotes and line breaks.</p>
+          <p className="field-note">The template contains only Name and Registration Number. Students complete their remaining particulars in the student portal. CSV UTF-8 only · Maximum 1,000 rows and 5 MB per import.</p>
         </div>
       </article>
       <article className="panel">
         <div className="panel-heading"><div><p className="eyebrow dark">STEP 2</p><h2>Validation summary</h2></div></div>
-        {!preview ? <p className="muted">Select a file and run validation to check required fields, department/programme matches, duplicate registration numbers, and existing records.</p> : <><div className="clearance-meta"><span><strong>Total rows</strong>{preview.rows.length}</span><span><strong>Valid rows</strong>{preview.valid_rows}</span><span><strong>Invalid rows</strong>{preview.invalid_rows}</span><span><strong>Duplicates</strong>{preview.duplicate_rows}</span></div><p className="field-note">Import is enabled only when all rows pass validation. Existing student records are never silently overwritten.</p><button className="primary-button" type="button" disabled={!canImport} onClick={() => void importRows()}>{busy ? 'Importing…' : `Import ${rows.length.toLocaleString()} records`}</button></>}
+        {!preview ? <p className="muted">Select a file and run validation to check names, registration numbers, duplicate entries, and existing records.</p> : <><div className="clearance-meta"><span><strong>Total rows</strong>{preview.rows.length}</span><span><strong>Valid rows</strong>{preview.valid_rows}</span><span><strong>Invalid rows</strong>{preview.invalid_rows}</span><span><strong>Duplicates</strong>{preview.duplicate_rows}</span></div><p className="field-note">Import is enabled only when all rows pass validation. Existing student records are never silently overwritten.</p><button className="primary-button" type="button" disabled={!canImport} onClick={() => void importRows()}>{busy ? 'Importing…' : `Import ${rows.length.toLocaleString()} records`}</button></>}
       </article>
     </div>
     {error && <div className="alert error" role="alert">{error}</div>}
