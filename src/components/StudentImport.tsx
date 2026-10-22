@@ -11,7 +11,7 @@ type PreviewResult = { valid_rows: number; invalid_rows: number; duplicate_rows:
 type ImportResult = { success: boolean; batch_id?: string; total_rows: number; inserted_rows: number; rejected_rows: number; issues?: RowIssue[] };
 type ImportBatch = { id: string; original_filename: string; total_rows: number; inserted_rows: number; updated_rows: number; rejected_rows: number; status: string; created_at: string; completed_at: string | null };
 
-const HEADERS = ['name', 'registration_number'];
+const HEADERS = ['Name', 'Registration Number'];
 const TEMPLATE = [
   HEADERS.join(','),
   'Amina Musa,COHT/2026/001',
