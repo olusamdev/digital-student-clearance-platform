@@ -30,7 +30,7 @@ async function prepareRows(admin: ReturnType<typeof createClient>, rawRows: unkn
     const rowNumber = index + 2;
     const row = raw && typeof raw === "object" ? raw as InputRow : {};
     const registration = clean(row.registration_number, 100).toUpperCase();
-    const fullName = clean(row.full_name ?? row.name, 160).replace(/\\s+/g, " ");
+    const fullName = clean(row.full_name ?? row.name, 160).replace(/\s+/g, " ");
     const messages: string[] = [];
     if (!registration) messages.push("Registration number is required.");
     if (fullName.length < 2) messages.push("Name must contain at least 2 characters.");
