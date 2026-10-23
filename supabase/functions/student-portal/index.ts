@@ -139,12 +139,12 @@ Deno.serve(async (req) => {
       }
       if (!validPayment) return json({ error: "Use the same verified email address that received the Paystack payment receipt for this registration number." }, 403, origin);
       const now = new Date().toISOString();
-      const { error: linkError } = await admin.from("student_records").update({
+      const { data: linkedRecord, error: linkError } = await admin.from("student_records").update({
         auth_user_id: user.id, auth_email: email, recovery_email: email,
         recovery_email_verified_at: now, account_setup_completed_at: now, updated_at: now,
-      }).eq("id", candidate.id).is("auth_user_id", null);
-      if (linkError) {
-        console.error("student-portal account link failed", { code: linkError.code });
+      }).eq("id", candidate.id).is("auth_user_id", null).select("id").maybeSingle();
+      if (linkError || !linkedRecord) {
+        console.error("student-portal account link failed", { code: linkError?.code ?? "record_already_linked" });
         return json({ error: "Could not safely link this student account. Contact the college if this persists." }, 409, origin);
       }
       await admin.from("audit_events").insert({
