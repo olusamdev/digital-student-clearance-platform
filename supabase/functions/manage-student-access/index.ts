@@ -17,6 +17,21 @@ function code() {
 async function internalEmail(registrationNumber: string) {
   return "student-" + (await hash(registrationNumber)).slice(0, 32) + "@students.dscp.invalid";
 }
+async function hasCurrentPaidSession(db: any, studentId: string) {
+  const { data: sessions, error: sessionsError } = await db.from("clearance_sessions")
+    .select("id,opens_at,closes_at").eq("active", true);
+  if (sessionsError) return { error: true, paid: false };
+  const now = Date.now();
+  const currentIds = (sessions ?? []).filter((session: any) =>
+    (!session.opens_at || new Date(session.opens_at).getTime() <= now) &&
+    (!session.closes_at || new Date(session.closes_at).getTime() >= now)
+  ).map((session: any) => session.id);
+  if (!currentIds.length) return { error: false, paid: false };
+  const { data: links, error: linksError } = await db.from("session_students").select("id")
+    .eq("student_id", studentId).in("session_id", currentIds).not("payment_unlocked_at", "is", null).limit(1);
+  if (linksError) return { error: true, paid: false };
+  return { error: false, paid: Boolean(links?.length) };
+}
 
 Deno.serve(async req => {
   const origin = req.headers.get("origin") ?? "";
@@ -54,9 +69,9 @@ Deno.serve(async req => {
       if (!student) return respond({ error: "Student record not found." }, 404, origin);
       const purpose = action === "complete_activation" ? "activation" : "password_reset";
       if (purpose === "activation") {
-        const { data: paidLink, error: paidError } = await db.from("session_students").select("id").eq("student_id", student.id).not("payment_unlocked_at", "is", null).limit(1).maybeSingle();
-        if (paidError) return respond({ error: "Could not verify the clearance payment." }, 500, origin);
-        if (!paidLink) return respond({ error: "A verified clearance payment is required before account activation." }, 402, origin);
+        const paidStatus = await hasCurrentPaidSession(db, student.id);
+        if (paidStatus.error) return respond({ error: "Could not verify the clearance payment." }, 500, origin);
+        if (!paidStatus.paid) return respond({ error: "A verified payment for the active clearance session is required before account activation." }, 402, origin);
       }
       if (purpose === "activation" && student.auth_user_id) return respond({ error: "This account is already activated. Contact an administrator if you cannot sign in." }, 409, origin);
       if (purpose === "password_reset" && !student.auth_user_id) return respond({ error: "This account has not been activated." }, 409, origin);
@@ -116,9 +131,9 @@ Deno.serve(async req => {
       if (!student) return respond({ error: "Student record not found." }, 404, origin);
       const purpose = action === "issue_activation" ? "activation" : "password_reset";
       if (purpose === "activation") {
-        const { data: paidLink, error: paidError } = await db.from("session_students").select("id").eq("student_id", student.id).not("payment_unlocked_at", "is", null).limit(1).maybeSingle();
-        if (paidError) return respond({ error: "Could not verify the clearance payment." }, 500, origin);
-        if (!paidLink) return respond({ error: "A verified clearance payment is required before an activation code can be issued." }, 402, origin);
+        const paidStatus = await hasCurrentPaidSession(db, student.id);
+        if (paidStatus.error) return respond({ error: "Could not verify the clearance payment." }, 500, origin);
+        if (!paidStatus.paid) return respond({ error: "A verified payment for the active clearance session is required before an activation code can be issued." }, 402, origin);
       }
       if (purpose === "activation" && student.auth_user_id) return respond({ error: "This account is already activated." }, 409, origin);
       if (purpose === "password_reset" && !student.auth_user_id) return respond({ error: "This account has not been activated." }, 409, origin);
