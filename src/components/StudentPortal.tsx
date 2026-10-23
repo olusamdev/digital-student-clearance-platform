@@ -144,27 +144,19 @@ export default function StudentPortal() {
 
   if (!session) return (
     <main className="auth-layout">
-      <section className="brand-panel">
-        <div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div>
-        <div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Your clearance, in one place.</h1><p>Verify your phone to view your official student record and track final-year clearance.</p></div>
-        <p className="panel-footnote">Student access · Secure phone verification</p>
-      </section>
-      <section className="form-panel">
-        <form className="login-card" onSubmit={otpSent ? verifyOtp : sendOtp}>
-          <p className="eyebrow dark">STUDENT PORTAL</p><h2>{otpSent ? 'Verify your phone' : 'Student sign in'}</h2>
-          <p className="muted">Enter the name and registration number on the college register, then verify a phone number you can access. You will add your remaining particulars after signing in.</p>
-          {error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}
-          <label htmlFor="student-registration">Registration number</label>
-          <input id="student-registration" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} maxLength={100} required disabled={otpSent} placeholder="Your official registration number" />
-          <label htmlFor="student-claim-name">Name as shown on the college register</label>
-          <input id="student-claim-name" value={claimName} onChange={(e) => setClaimName(e.target.value)} maxLength={160} required disabled={otpSent} placeholder="Your registered name" />
-          <label htmlFor="student-phone">Your mobile phone number</label>
-          <input id="student-phone" type="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="08012345678" required disabled={otpSent} />
-          {otpSent && <><label htmlFor="student-otp">SMS verification code</label><input id="student-otp" inputMode="numeric" autoComplete="one-time-code" value={otp} onChange={(e) => setOtp(e.target.value)} minLength={6} maxLength={8} required placeholder="Enter code" /><button className="text-button" type="button" onClick={() => { setOtpSent(false); setOtp(''); setError(''); }}>Change phone number</button></>}
-          <button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Please wait…' : otpSent ? 'Verify and continue' : 'Send verification code'}<span aria-hidden="true">→</span></button>
-          <p className="security-note">If your college-recorded phone number is outdated or shared, contact the college to correct it. Do not use another student's phone number.</p>
-        </form><footer className="page-footer">COHT Digital Student Clearance Platform</footer>
-      </section>
+      <section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Your clearance, in one place.</h1><p>Use your official registration number to access student clearance.</p></div><p className="panel-footnote">Student access · Password sign-in</p></section>
+      <section className="form-panel"><form className="login-card" onSubmit={authStep === 'registration' ? lookupRecord : authStep === 'password' ? signInStudent : (e) => { e.preventDefault(); void continueAfterConfirmation(); }}>
+        <p className="eyebrow dark">STUDENT PORTAL</p>
+        <h2>{authStep === 'registration' ? 'Find your student record' : authStep === 'confirm' ? 'Confirm your record' : authStep === 'password' ? 'Welcome back' : authStep === 'payment' ? 'Clearance payment' : 'Create your password'}</h2>
+        <p className="muted">{authStep === 'registration' ? 'Enter your registration number to continue.' : authStep === 'confirm' ? 'Check that the registered name below belongs to you.' : authStep === 'password' ? 'Enter your password. Your registration number is already confirmed.' : authStep === 'payment' ? 'Your record is found. The clearance fee must be paid before account setup.' : 'Your payment is recorded. Resume secure account setup.'}</p>
+        {error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}
+        {authStep === 'registration' && <><label htmlFor="student-registration">Registration number</label><input id="student-registration" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} maxLength={100} required autoComplete="off" placeholder="Your official registration number" /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Checking record…' : 'Continue'}<span aria-hidden="true">→</span></button></>}
+        {authStep === 'confirm' && lookup && <><div className="panel"><p className="muted">Registered name</p><h2>{lookup.student.full_name}</h2><p className="clearance-reg">{lookup.student.registration_number}</p><p>Hello, are you {lookup.student.full_name}?</p></div><button className="primary-button" type="submit">Yes, that's me <span aria-hidden="true">→</span></button><button className="secondary-button" type="button" onClick={() => { setLookup(null); setRegistrationNumber(''); setAuthStep('registration'); setError(''); }}>No, enter the correct registration number</button></>}
+        {authStep === 'password' && <><label htmlFor="student-password">Password</label><input id="student-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Signing in…' : 'Sign in'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => void requestPasswordReset()} disabled={authBusy}>Forgot password?</button></>}
+        {authStep === 'payment' && lookup && <><div className="panel"><p className="muted">Student</p><h3>{lookup.student.full_name}</h3><p className="clearance-reg">{lookup.student.registration_number}</p><h2>₦{(lookup.clearance_fee_kobo / 100).toLocaleString('en-NG')}</h2></div><p className="field-note">Paystack initiation and verification are not yet connected. No payment can be accepted here yet. Do not pay a personal account.</p></>}
+        {authStep === 'setup' && <><div className="alert success">A verified payment was found. Secure password creation is not yet enabled in this build.</div><p className="field-note">If you were debited but could not finish setup, retain your payment reference and contact the college. Do not pay again.</p></>}
+        {authStep !== 'registration' && <button className="text-button" type="button" onClick={() => { setAuthStep('registration'); setLookup(null); setRegistrationNumber(''); setPassword(''); setError(''); setNotice(''); }}>Use another registration number</button>}
+      </form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section>
     </main>
   );
 
