@@ -11,15 +11,6 @@ type StudentSession = { id: string; session_id: string; session_name: string; ac
 type Dashboard = { student: Student; clearance_fee_kobo: number; sessions: StudentSession[]; departments: DepartmentOption[]; programmes: ProgrammeOption[] };
 type LookupResult = { student: { registration_number: string; full_name: string }; account_ready: boolean; auth_email: string | null; payment_verified: boolean; payment_pending: boolean; clearance_fee_kobo: number; session_available: boolean };
 
-function toE164(value: string) {
-  const raw = value.trim();
-  if (raw.startsWith('+') && /^\+\d{10,15}$/.test(raw)) return raw;
-  const digits = raw.replace(/\D/g, '');
-  if (digits.startsWith('234') && digits.length === 13) return '+' + digits;
-  if (digits.startsWith('0') && digits.length === 11) return '+234' + digits.slice(1);
-  if (digits.length === 10) return '+234' + digits;
-  throw new Error('Enter a valid Nigerian phone number, e.g. 08012345678 or +2348012345678.');
-}
 const dateText = (value: string | null) => value ? new Date(value).toLocaleString() : '—';
 const statusText = (value: string) => value.replaceAll('_', ' ');
 
@@ -112,7 +103,7 @@ export default function StudentPortal() {
 
   async function signOut() {
     await supabase.auth.signOut();
-    setSession(null); setDashboard(null); setOtpSent(false); setOtp(''); setNotice('You have signed out.');
+    setSession(null); setDashboard(null); setRegistrationNumber(''); setLookup(null); setAuthStep('registration'); setPassword(''); setNotice('You have signed out.');
   }
 
   async function invokeStudent(action: string, payload: Record<string, unknown> = {}) {
