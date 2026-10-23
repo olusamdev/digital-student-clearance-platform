@@ -4,7 +4,7 @@ import { describeFunctionError } from '../functionErrors';
 
 type Lookup = { student: { registration_number: string; full_name: string }; account_ready: boolean; payment_verified: boolean };
 
-export default function StudentAccessTools({ canManageSupport }: { canManageSupport: boolean }) {
+export default function StudentAccessTools({ canManageSupport, canManageStudents }: { canManageSupport: boolean; canManageStudents: boolean }) {
   const [registrationNumber, setRegistrationNumber] = useState('');
   const [lookup, setLookup] = useState<Lookup | null>(null);
   const [supportNumber, setSupportNumber] = useState('');
@@ -89,6 +89,7 @@ export default function StudentAccessTools({ canManageSupport }: { canManageSupp
     {error && <div className="alert error" role="alert">{error}</div>}
     {notice && <div className="alert success" role="status">{notice}</div>}
     <div className="management-grid">
+      {canManageStudents && <>
       <article className="panel">
         <div className="panel-heading"><div><p className="eyebrow dark">ASSISTED PAYMENT</p><h2>Pay for a student</h2></div></div>
         <form className="management-form" onSubmit={findStudent}>
@@ -113,6 +114,7 @@ export default function StudentAccessTools({ canManageSupport }: { canManageSupp
           {code && <div className="activation-code"><p className="field-note">Give this code directly to the verified student. It is shown only now.</p><strong>{code}</strong><button className="secondary-button" type="button" onClick={() => { void navigator.clipboard?.writeText(code); setNotice('Code copied. Deliver it directly to the verified student.'); }}>Copy code</button></div>}
         </div>}
       </article>
+      </>}
       {canManageSupport && <article className="panel">
         <div className="panel-heading"><div><p className="eyebrow dark">SUPERADMIN SETTING</p><h2>Student WhatsApp support</h2></div></div>
         <form className="management-form" onSubmit={saveSupportNumber}>
