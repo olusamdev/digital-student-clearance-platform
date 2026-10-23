@@ -18,9 +18,9 @@ export default function StudentPortal() {
   const [session, setSession] = useState<Session | null>(null);
   const [registrationNumber, setRegistrationNumber] = useState('');
   const [lookup, setLookup] = useState<LookupResult | null>(null);
-  const [authStep, setAuthStep] = useState<'registration' | 'confirm' | 'password' | 'payment' | 'setup'>('registration');
+  const [authStep, setAuthStep] = useState<'registration' | 'confirm' | 'password' | 'payment' | 'setup' | 'reset'>('registration');
   const [password, setPassword] = useState('');
-  const [payerEmail, setPayerEmail] = useState('');
+  const [accessCode, setAccessCode] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -79,9 +79,7 @@ export default function StudentPortal() {
     const reference = params.get('reference') || params.get('trxref');
     if (!reference) return;
     setPaymentReference(reference);
-    const savedEmail = window.sessionStorage.getItem('dscp-payment-email') || '';
     window.sessionStorage.removeItem('dscp-payment-email');
-    setPayerEmail(savedEmail);
     window.history.replaceState({}, '', window.location.pathname);
     let cancelled = false;
     void (async () => {
@@ -145,7 +143,7 @@ export default function StudentPortal() {
     if (!lookup) return;
     setAuthBusy(true); setError(''); setNotice('');
     const { data, error: paymentError } = await supabase.functions.invoke('student-payments', {
-      body: { action: 'initiate', payload: { registration_number: lookup.student.registration_number, email: payerEmail.trim().toLowerCase() } },
+      body: { action: 'initiate', payload: { registration_number: lookup.student.registration_number } },
     });
     setAuthBusy(false);
     if (paymentError || data?.error) {
@@ -157,7 +155,7 @@ export default function StudentPortal() {
         body: { action: 'lookup_record', payload: { registration_number: lookup.student.registration_number } },
       });
       if (refreshError || refreshed?.error) {
-        setError('A previous payment exists, but its receipt email could not be checked. Return to the registration lookup and retry; do not pay again.');
+        setError('A previous payment exists, but the student record could not be reloaded. Return to registration lookup and retry; do not pay again.');
         return;
       }
       const found = refreshed as LookupResult;
@@ -167,8 +165,22 @@ export default function StudentPortal() {
       return;
     }
     if (!data?.authorization_url) { setError('Paystack did not return a payment link. Please try again.'); return; }
-    window.sessionStorage.setItem('dscp-payment-email', payerEmail.trim().toLowerCase());
     window.location.assign(String(data.authorization_url));
+  }
+
+  async function contactSupport() {
+    if (!lookup) return;
+    setAuthBusy(true); setError(''); setNotice('');
+    const { data, error: supportError } = await supabase.functions.invoke('manage-student-access', { body: { action: 'get_support_number' } });
+    setAuthBusy(false);
+    if (supportError || data?.error) {
+      setError(supportError ? await describeFunctionError(supportError, 'manage-student-access', 'Could not load the support contact.') : String(data?.error));
+      return;
+    }
+    const number = String(data?.whatsapp || '').replace(/[^0-9]/g, '');
+    if (!number) { setError('The college has not configured its WhatsApp support number yet. Contact the Registrar’s office.'); return; }
+    const message = `Hello, I need help confirming my clearance payment. Registration number: ${lookup.student.registration_number}.`;
+    window.location.assign(`https://wa.me/${number}?text=${encodeURIComponent(message)}`);
   }
 
   async function verifyPaymentReference() {
@@ -201,36 +213,28 @@ export default function StudentPortal() {
   async function createStudentAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!lookup) return;
-    const email = payerEmail.trim().toLowerCase();
-    if (!email) { setError('Enter the email address used for the successful Paystack payment.'); return; }
+    if (!accessCode.trim()) { setError('Enter the one-time activation code issued by the college.'); return; }
     if (password.length < 8) { setError('Choose a password with at least 8 characters.'); return; }
+    if (password !== confirmNewPassword) { setError('The passwords do not match.'); return; }
     setAuthBusy(true); setError(''); setNotice('');
-    const { data: emailCheck, error: emailCheckError } = await supabase.functions.invoke('student-portal', {
-      body: { action: 'validate_payment_email', payload: { registration_number: lookup.student.registration_number, email } },
+    const { data, error: activationError } = await supabase.functions.invoke('manage-student-access', {
+      body: { action: 'complete_activation', payload: { registration_number: lookup.student.registration_number, code: accessCode, password } },
     });
-    if (emailCheckError || emailCheck?.error || !emailCheck?.valid) {
+    if (activationError || data?.error || !data?.auth_email) {
       setAuthBusy(false);
-      setError(emailCheckError ? await describeFunctionError(emailCheckError, 'student-portal', 'Could not verify the payment email.') : String(emailCheck?.error || 'The email did not match the payment record.'));
+      setError(activationError ? await describeFunctionError(activationError, 'manage-student-access', 'Could not activate the student account.') : String(data?.error || 'Account activation could not be completed.'));
       return;
     }
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email, password,
-      options: {
-        emailRedirectTo: window.location.origin + '/student',
-        data: { registration_number: lookup.student.registration_number },
-      },
-    });
+    const { data: signedIn, error: signInError } = await supabase.auth.signInWithPassword({ email: String(data.auth_email), password });
     setAuthBusy(false);
-    if (signUpError) {
-      setError('Account creation could not be completed. If you already created an account, sign in or use password recovery. Otherwise check the email and try again.');
+    if (signInError || !signedIn.session) {
+      setNotice('Your account was activated. Return to registration lookup and sign in with the password you just created.');
+      setAuthStep('password'); setPassword(''); setConfirmNewPassword(''); setAccessCode('');
       return;
     }
-    if (data.session) {
-      setSession(data.session);
-      await loadDashboard();
-      return;
-    }
-    setNotice('Check your email and verify the address to finish creating your account. Return to this portal after verification. Do not pay again.');
+    setSession(signedIn.session);
+    setPassword(''); setConfirmNewPassword(''); setAccessCode('');
+    await loadDashboard();
   }
 
   async function signInStudent(event: FormEvent<HTMLFormElement>) {
@@ -244,12 +248,39 @@ export default function StudentPortal() {
   }
 
   async function requestPasswordReset() {
-    if (!lookup?.auth_email) { setError('A recovery email is not configured for this account. Contact the college for account recovery.'); return; }
+    setError('');
+    setNotice('For your protection, password recovery must be initiated by an authorised college administrator. Contact the college and ask for a one-time reset code.');
+    setAuthStep('reset');
+    setAccessCode(''); setNewPassword(''); setConfirmNewPassword('');
+  }
+
+  async function completePasswordReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!lookup) { setError('Return to registration lookup and enter your registration number first.'); return; }
+    if (!accessCode.trim()) { setError('Enter the password-reset code issued by the college.'); return; }
+    if (newPassword.length < 8) { setError('Choose a password with at least 8 characters.'); return; }
+    if (newPassword !== confirmNewPassword) { setError('The passwords do not match.'); return; }
     setAuthBusy(true); setError(''); setNotice('');
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(lookup.auth_email, { redirectTo: window.location.origin + '/student' });
+    const { data, error: resetError } = await supabase.functions.invoke('manage-student-access', {
+      body: { action: 'complete_password_reset', payload: { registration_number: lookup.student.registration_number, code: accessCode, password: newPassword } },
+    });
+    if (resetError || data?.error) {
+      setAuthBusy(false);
+      setError(resetError ? await describeFunctionError(resetError, 'manage-student-access', 'Could not reset the password.') : String(data?.error || 'Password reset could not be completed.'));
+      return;
+    }
+    const authEmail = lookup.auth_email;
+    if (!authEmail) { setAuthBusy(false); setError('Password was changed, but the sign-in identifier could not be loaded. Return to registration lookup and try again.'); return; }
+    const { data: signedIn, error: signInError } = await supabase.auth.signInWithPassword({ email: authEmail, password: newPassword });
     setAuthBusy(false);
-    if (resetError) setError('Could not send the password-reset email. Contact the college for help.');
-    else setNotice('If a recovery email is configured, a password-reset link has been sent.');
+    if (signInError || !signedIn.session) {
+      setNotice('Password reset completed. Return to registration lookup and sign in with your new password.');
+      setAuthStep('password'); setNewPassword(''); setConfirmNewPassword(''); setAccessCode('');
+      return;
+    }
+    setSession(signedIn.session);
+    setNewPassword(''); setConfirmNewPassword(''); setAccessCode('');
+    await loadDashboard();
   }
 
   async function saveNewPassword(event: FormEvent<HTMLFormElement>) {
@@ -300,17 +331,19 @@ export default function StudentPortal() {
   if (!session) return (
     <main className="auth-layout">
       <section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Your clearance, in one place.</h1><p>Use your official registration number to access student clearance.</p></div><p className="panel-footnote">Student access · Password sign-in</p></section>
-      <section className="form-panel"><form className="login-card" onSubmit={authStep === 'registration' ? lookupRecord : authStep === 'password' ? signInStudent : authStep === 'payment' ? startPayment : authStep === 'setup' ? createStudentAccount : (e) => { e.preventDefault(); void continueAfterConfirmation(); }}>
+      <section className="form-panel"><form className="login-card" onSubmit={authStep === 'registration' ? lookupRecord : authStep === 'password' ? signInStudent : authStep === 'payment' ? startPayment : authStep === 'setup' ? createStudentAccount : authStep === 'reset' ? completePasswordReset : (e) => { e.preventDefault(); void continueAfterConfirmation(); }}>
         <p className="eyebrow dark">STUDENT PORTAL</p>
-        <h2>{authStep === 'registration' ? 'Find your student record' : authStep === 'confirm' ? 'Confirm your record' : authStep === 'password' ? 'Welcome back' : authStep === 'payment' ? 'Clearance payment' : 'Create your password'}</h2>
-        <p className="muted">{authStep === 'registration' ? 'Enter your registration number to continue.' : authStep === 'confirm' ? 'Check that the registered name below belongs to you.' : authStep === 'password' ? 'Enter your password. Your registration number is already confirmed.' : authStep === 'payment' ? 'Your record is found. The clearance fee must be paid before account setup.' : 'Your payment is recorded. Resume secure account setup.'}</p>
+        <h2>{authStep === 'registration' ? 'Find your student record' : authStep === 'confirm' ? 'Confirm your record' : authStep === 'password' ? 'Welcome back' : authStep === 'payment' ? 'Clearance payment' : authStep === 'reset' ? 'Reset your password' : 'Create your password'}</h2>
+        <p className="muted">{authStep === 'registration' ? 'Enter your registration number to continue.' : authStep === 'confirm' ? 'Check that the registered name below belongs to you.' : authStep === 'password' ? 'Enter your password. Your registration number is already confirmed.' : authStep === 'payment' ? 'Your record is found. The clearance fee must be paid before account setup.' : authStep === 'reset' ? 'Enter the one-time reset code issued by an authorised college administrator.' : 'Your payment is recorded. Verify your activation code and choose a private password.'}</p>
         {error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}
         {authStep === 'registration' && <><label htmlFor="student-registration">Registration number</label><input id="student-registration" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} maxLength={100} required autoComplete="off" placeholder="Your official registration number" /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Checking record…' : 'Continue'}<span aria-hidden="true">→</span></button></>}
-        {authStep === 'confirm' && lookup && <><div className="panel"><p className="muted">Registered name</p><h2>{lookup.student.full_name}</h2><p className="clearance-reg">{lookup.student.registration_number}</p><p>Hello, are you {lookup.student.full_name}?</p></div><button className="primary-button" type="submit">Yes, that's me <span aria-hidden="true">→</span></button><button className="secondary-button" type="button" onClick={() => { setLookup(null); setRegistrationNumber(''); setPayerEmail(''); setPaymentReference(''); setAuthStep('registration'); setError(''); }}>No, enter the correct registration number</button></>}
-        {authStep === 'password' && <><label htmlFor="student-password">Password</label><input id="student-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Signing in…' : 'Sign in'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => void requestPasswordReset()} disabled={authBusy}>Forgot password?</button></>}
-        {authStep === 'payment' && lookup && <><div className="panel"><p className="muted">Student</p><h3>{lookup.student.full_name}</h3><p className="clearance-reg">{lookup.student.registration_number}</p><h2>₦{(lookup.clearance_fee_kobo / 100).toLocaleString('en-NG')}</h2></div>{lookup.payment_pending && <><p className="field-note">A previous payment is still being reconciled. Verify its reference before starting another payment.</p><label htmlFor="student-payment-reference">Existing Paystack reference</label><input id="student-payment-reference" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} maxLength={200} autoComplete="off" placeholder="DSCP-…" /><button className="secondary-button" type="button" disabled={authBusy || !paymentReference.trim()} onClick={() => void verifyPaymentReference()}>{authBusy ? 'Verifying…' : 'Verify previous payment'}</button></>}{!lookup.payment_pending && <><label htmlFor="student-payment-email">Email for payment receipt and account verification</label><input id="student-payment-email" type="email" value={payerEmail} onChange={(e) => setPayerEmail(e.target.value)} maxLength={254} autoComplete="email" required placeholder="you@example.com" /><p className="field-note">Use an email account you can access. You must verify this email to create your student account. The account email must match the email used for payment.</p><button className="primary-button" type="submit" disabled={authBusy || !lookup.session_available}>{authBusy ? 'Connecting to Paystack…' : 'Pay clearance fee'}<span aria-hidden="true">→</span></button></>}</>}
-        {authStep === 'setup' && <><div className="panel"><p className="muted">Verified payment</p><h3>{lookup?.student.full_name}</h3><p className="clearance-reg">{lookup?.student.registration_number}</p><h2>₦{((lookup?.clearance_fee_kobo || 0) / 100).toLocaleString('en-NG')}</h2></div><p className="field-note">Payment is verified. Use the same email address that was used for the payment receipt. Verify your email before your student record is linked. Do not pay again.</p><label htmlFor="student-account-email">Email address</label><input id="student-account-email" type="email" value={payerEmail} onChange={(e) => setPayerEmail(e.target.value)} maxLength={254} required autoComplete="email" /><label htmlFor="student-new-password">Create password</label><input id="student-new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Creating account…' : 'Create student account'}<span aria-hidden="true">→</span></button></>}
-        {authStep !== 'registration' && <button className="text-button" type="button" onClick={() => { setAuthStep('registration'); setLookup(null); setRegistrationNumber(''); setPassword(''); setPayerEmail(''); setPaymentReference(''); setError(''); setNotice(''); }}>Use another registration number</button>}
+        {authStep === 'confirm' && lookup && <><div className="panel"><p className="muted">Registered name</p><h2>{lookup.student.full_name}</h2><p className="clearance-reg">{lookup.student.registration_number}</p><p>Hello, are you {lookup.student.full_name}?</p></div><button className="primary-button" type="submit">Yes, that's me <span aria-hidden="true">→</span></button><button className="secondary-button" type="button" onClick={() => { setLookup(null); setRegistrationNumber(''); setAccessCode(''); setPaymentReference(''); setAuthStep('registration'); setError(''); }}>No, enter the correct registration number</button></>}
+        {authStep === 'password' && <><label htmlFor="student-password">Password</label><input id="student-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Signing in…' : 'Sign in'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => void requestPasswordReset()} disabled={authBusy}>Forgot password? Contact an administrator</button></>}
+        {authStep === 'payment' && lookup && <><div className="panel"><p className="muted">Student</p><h3>{lookup.student.full_name}</h3><p className="clearance-reg">{lookup.student.registration_number}</p><h2>₦{(lookup.clearance_fee_kobo / 100).toLocaleString('en-NG')}</h2></div>{lookup.payment_pending && <><p className="field-note">A previous payment is still being reconciled. Verify its reference before starting another payment.</p><label htmlFor="student-payment-reference">Existing Paystack reference</label><input id="student-payment-reference" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} maxLength={200} autoComplete="off" placeholder="DSCP-…" /><button className="secondary-button" type="button" disabled={authBusy || !paymentReference.trim()} onClick={() => void verifyPaymentReference()}>{authBusy ? 'Verifying…' : 'Verify previous payment'}</button></>}{!lookup.payment_pending && <><p className="field-note">You do not need a personal email account to use the student portal. If you have already paid, do not pay again.</p><button className="primary-button" type="submit" disabled={authBusy || !lookup.session_available}>{authBusy ? 'Connecting to Paystack…' : 'Pay clearance fee'}<span aria-hidden="true">→</span></button></>}</>}
+        {authStep === 'setup' && <><div className="panel"><p className="muted">Verified clearance payment</p><h3>{lookup?.student.full_name}</h3><p className="clearance-reg">{lookup?.student.registration_number}</p><h2>₦{((lookup?.clearance_fee_kobo || 0) / 100).toLocaleString('en-NG')}</h2></div><p className="field-note">Enter the single-use activation code issued by an authorised college staff member. The code expires after 30 minutes. Do not share your password with staff.</p><label htmlFor="student-activation-code">One-time activation code</label><input id="student-activation-code" value={accessCode} onChange={(e) => setAccessCode(e.target.value.toUpperCase())} minLength={8} maxLength={40} autoComplete="one-time-code" required /><label htmlFor="student-new-password">Create password</label><input id="student-new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><label htmlFor="student-confirm-new-password">Confirm password</label><input id="student-confirm-new-password" type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Activating account…' : 'Activate and set password'}<span aria-hidden="true">→</span></button></>}
+        {authStep === 'reset' && <><p className="field-note">An authorised college administrator must verify your identity and issue a reset code. The administrator cannot see the new password you choose.</p><label htmlFor="student-reset-code">One-time password-reset code</label><input id="student-reset-code" value={accessCode} onChange={(e) => setAccessCode(e.target.value.toUpperCase())} minLength={8} maxLength={40} autoComplete="one-time-code" required /><label htmlFor="student-reset-password">New password</label><input id="student-reset-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><label htmlFor="student-reset-confirm">Confirm new password</label><input id="student-reset-confirm" type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Resetting password…' : 'Set new password'}<span aria-hidden="true">→</span></button></>}
+        {authStep === 'payment' && <button className="secondary-button" type="button" onClick={() => void contactSupport()} disabled={authBusy}>Already paid? Contact support on WhatsApp</button>}
+        {authStep !== 'registration' && <button className="text-button" type="button" onClick={() => { setAuthStep('registration'); setLookup(null); setRegistrationNumber(''); setPassword(''); setAccessCode(''); setPaymentReference(''); setError(''); setNotice(''); }}>Use another registration number</button>}
       </form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section>
     </main>
   );
