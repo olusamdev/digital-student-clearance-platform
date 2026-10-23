@@ -122,7 +122,7 @@ export default function StudentPortal() {
       return;
     }
     const found = data as LookupResult;
-    setLookup(found); setAuthStep('confirm');
+    setLookup(found); setAuthStep(found.account_ready ? 'password' : found.payment_verified ? 'setup' : 'confirm');
   }
 
   async function continueAfterConfirmation() {
@@ -364,10 +364,10 @@ export default function StudentPortal() {
       {!loading && !dashboard && <div className="panel"><h2>Student record not available</h2><p className="muted">Your verified phone number could not be linked to a matching name and registration number, or no clearance session has been assigned. Check your details or contact the college clearance office.</p><button className="secondary-button" type="button" onClick={() => void loadDashboard()}>Try again</button></div>}
       {dashboard && <>
         <section className="content-grid">
-          <article className="panel account-panel"><div className="panel-heading"><div><p className="eyebrow dark">OFFICIAL RECORD</p><h2>Student particulars</h2></div><span className="status-pill"><span /> Verified phone</span></div>
+          <article className="panel account-panel"><div className="panel-heading"><div><p className="eyebrow dark">OFFICIAL RECORD</p><h2>Student particulars</h2></div><span className="status-pill"><span /> Account verified</span></div>
             <dl className="details-list"><div><dt>Registration number</dt><dd>{dashboard.student.registration_number}</dd></div><div><dt>Department</dt><dd>{dashboard.student.department || 'Not assigned'}</dd></div><div><dt>Programme</dt><dd>{dashboard.student.programme || 'Not assigned'}</dd></div><div><dt>Phone</dt><dd>{dashboard.student.phone_number || 'Verified sign-in phone'}</dd></div></dl>
           </article>
-          <article className="panel roles-panel"><div className="panel-heading"><div><p className="eyebrow dark">CLEARANCE FEE</p><h2>₦{(dashboard.clearance_fee_kobo / 100).toLocaleString('en-NG')}</h2></div></div><p className="muted">Payment must be verified before clearance requests can be submitted.</p><span className="directory-status inactive">Payment status is checked by the server</span><p className="field-note">Online payment initiation is not yet connected. Do not pay into a personal account; use only a payment option officially announced by the college.</p></article>
+          <article className="panel roles-panel"><div className="panel-heading"><div><p className="eyebrow dark">CLEARANCE FEE</p><h2>₦{(dashboard.clearance_fee_kobo / 100).toLocaleString('en-NG')}</h2></div></div><p className="muted">Payment must be verified before clearance requests can be submitted.</p><span className="directory-status inactive">Payment status is checked by the server</span><p className="field-note">If your payment status appears incorrect, return to the Student Portal payment screen and use “Already paid? Contact support on WhatsApp.”</p></article>
         </section>
         {!dashboard.sessions.length && <div className="panel"><h2>No clearance session assigned</h2><p className="muted">Your college record is recognised, but an active clearance session has not been assigned yet. Contact the clearance administrator.</p></div>}
         {dashboard.sessions.map((item) => <section className="panel clearance-request-card" key={item.id}>
