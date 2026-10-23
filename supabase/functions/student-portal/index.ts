@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { corsHeaders, isAllowedOrigin, rejectOrigin } from "./_shared/cors.ts";
+import { corsHeaders, isAllowedOrigin, rejectOrigin } from "../_shared/cors.ts";
 
 type Json = Record<string, unknown>;
 const json = (body: unknown, status = 200, origin = "") => new Response(JSON.stringify(body), {
@@ -36,14 +36,89 @@ Deno.serve(async (req) => {
     const anon = Deno.env.get("SUPABASE_ANON_KEY");
     const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!url || !anon || !service) return json({ error: "Server configuration incomplete" }, 500, origin);
+    const body = await req.json().catch(() => ({})) as Json;
+    const action = String(body.action ?? "");
+    const payload = body.payload && typeof body.payload === "object" && body.payload !== null ? body.payload as Json : {};
+    const sessionStudentId = text(payload.session_student_id, 80);
+    const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
+
+    // Registration lookup is deliberately unauthenticated; it returns only the imported name
+    // and account/payment state. It never grants access to biodata or clearance records.
+    if (action === "lookup_record") {
+      const registrationNumber = text(payload.registration_number, 100).toUpperCase();
+      if (!registrationNumber) return json({ error: "Enter your registration number." }, 400, origin);
+      const { data: candidate, error: lookupError } = await admin.from("student_records")
+        .select("id,registration_number,full_name,auth_user_id,auth_email")
+        .eq("registration_number", registrationNumber).maybeSingle();
+      if (lookupError) return json({ error: "Could not check that registration number. Please try again." }, 500, origin);
+      if (!candidate) return json({ error: "No student record was found. Check the registration number or contact the college." }, 404, origin);
+      const { data: activeSessions, error: sessionsError } = await admin.from("clearance_sessions")
+        .select("id,name,academic_session,active,opens_at,closes_at").eq("active", true).limit(10);
+      if (sessionsError) return json({ error: "Could not check clearance availability. Please try again." }, 500, origin);
+      const feeSetting = await admin.from("app_settings").select("setting_value").eq("setting_key", "clearance_fee_kobo").maybeSingle();
+      const feeValue = Number(feeSetting.data?.setting_value ?? 170000);
+      const activeSession = (activeSessions ?? []).find((item) => {
+        const now = Date.now();
+        return (!item.opens_at || new Date(item.opens_at).getTime() <= now) &&
+          (!item.closes_at || new Date(item.closes_at).getTime() >= now);
+      }) ?? null;
+      const { data: studentSessions, error: studentSessionsError } = await admin.from("session_students")
+        .select("id,session_id,payment_unlocked_at").eq("student_id", candidate.id);
+      if (studentSessionsError) return json({ error: "Could not check your payment status. Please try again." }, 500, origin);
+      const links = studentSessions ?? [];
+      const activeLinks = activeSession ? links.filter((link) => link.session_id === activeSession.id) : [];
+      const paymentVerified = activeLinks.some((link) => Boolean(link.payment_unlocked_at));
+      let paymentPending = false;
+      if (activeLinks.length) {
+        const { data: transactions, error: transactionError } = await admin.from("payment_transactions")
+          .select("status,created_at").in("session_student_id", activeLinks.map((link) => link.id))
+          .order("created_at", { ascending: false }).limit(10);
+        if (transactionError) return json({ error: "Could not check your payment status. Please try again." }, 500, origin);
+        paymentPending = !paymentVerified && (transactions ?? []).some((item) => ["pending", "initiated", "successful"].includes(item.status));
+      }
+      return json({
+        success: true,
+        student: { registration_number: candidate.registration_number, full_name: candidate.full_name },
+        account_ready: Boolean(candidate.auth_user_id && candidate.auth_email),
+        auth_email: candidate.auth_user_id && candidate.auth_email ? candidate.auth_email : null,
+        payment_verified: paymentVerified,
+        payment_pending: paymentPending,
+        clearance_fee_kobo: Number.isFinite(feeValue) && feeValue > 0 ? feeValue : 170000,
+        session_available: Boolean(activeSession),
+      }, 200, origin);
+    }
+
+    if (action === "validate_payment_email") {
+      const registrationNumber = text(payload.registration_number, 100).toUpperCase();
+      const email = text(payload.email, 254).toLowerCase();
+      if (!registrationNumber || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+        return json({ error: "Enter the registration number and the email used for payment." }, 400, origin);
+      }
+      const { data: candidate, error: candidateError } = await admin.from("student_records")
+        .select("id,registration_number,auth_user_id").eq("registration_number", registrationNumber).maybeSingle();
+      if (candidateError) return json({ error: "Could not check the payment details." }, 500, origin);
+      if (!candidate) return json({ error: "The registration number and payment email could not be verified together." }, 403, origin);
+      if (candidate.auth_user_id) return json({ error: "This student record already has an account. Sign in or use password recovery." }, 409, origin);
+      const { data: paidRows, error: paidError } = await admin.from("payment_transactions")
+        .select("id,session_student_id").eq("registration_number_snapshot", candidate.registration_number)
+        .eq("payer_email", email).eq("status", "successful").order("verified_at", { ascending: false }).limit(10);
+      if (paidError) return json({ error: "Could not check the payment details." }, 500, origin);
+      for (const payment of paidRows ?? []) {
+        const { data: paidSession } = await admin.from("session_students").select("student_id,payment_unlocked_at")
+          .eq("id", payment.session_student_id).maybeSingle();
+        if (paidSession && paidSession.student_id === candidate.id && paidSession.payment_unlocked_at) {
+          return json({ success: true, valid: true }, 200, origin);
+        }
+      }
+      return json({ error: "That email does not match a verified clearance payment for this registration number. Use the receipt email, or contact the college if you need help." }, 403, origin);
+    }
+
     const authorization = req.headers.get("Authorization");
     if (!authorization?.startsWith("Bearer ")) return json({ error: "Authentication required" }, 401, origin);
     const userClient = createClient(url, anon, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false, autoRefreshToken: false } });
     const { data: authData, error: authError } = await userClient.auth.getUser();
     const user = authData.user;
-    if (authError || !user || !user.phone || !user.phone_confirmed_at) return json({ error: "Verify your phone number before accessing student records." }, 401, origin);
-
-    const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
+    if (authError || !user) return json({ error: "Sign in to access your student account." }, 401, origin);
     // A staff identity must never be treated as a student identity, even if a phone number is shared.
     const [{ data: staffProfile }, { data: staffAssignment }] = await Promise.all([
       admin.from("staff_profiles").select("user_id").eq("user_id", user.id).maybeSingle(),
@@ -51,49 +126,65 @@ Deno.serve(async (req) => {
     ]);
     if (staffProfile || staffAssignment) return json({ error: "Staff accounts cannot access the student portal. Sign out and use the staff workspace." }, 403, origin);
 
-    const normalized = canonicalPhone(user.phone);
-    if (!normalized) return json({ error: "The verified phone number format is not supported. Contact the college." }, 400, origin);
-    const body = await req.json().catch(() => ({})) as Json;
-    const action = String(body.action ?? "");
-    const payload = body.payload && typeof body.payload === "object" && body.payload !== null ? body.payload as Json : {};
-    const sessionStudentId = text(payload.session_student_id, 80);
-
-    if (action === "claim_record") {
-      const registrationNumber = text(payload.registration_number, 100).toUpperCase();
-      const claimedName = text(payload.full_name, 160).replace(/\s+/g, " ");
-      if (!registrationNumber || claimedName.length < 2) return json({ error: "Enter your official registration number and the name on the college register." }, 400, origin);
-      const { data: candidates, error: claimLookupError } = await admin.from("student_records")
-        .select("id,registration_number,full_name,phone_number")
-        .eq("registration_number", registrationNumber).limit(2);
-      if (claimLookupError) return json({ error: "Could not verify your college record. Please try again." }, 500, origin);
-      const candidate = (candidates ?? []).length === 1 ? candidates![0] : null;
-      if (!candidate || candidate.full_name.trim().toLocaleLowerCase().replace(/\s+/g, " ") !== claimedName.toLocaleLowerCase().replace(/\s+/g, " ")) {
-        return json({ error: "The name and registration number did not match the college register. Check the details or contact the college." }, 403, origin);
+    if (action === "link_account") {
+      const email = text(user.email, 254).toLowerCase();
+      if (!email || !user.email_confirmed_at) {
+        return json({ error: "Verify your email address before completing account setup." }, 403, origin);
       }
-      const { data: phoneOwner, error: phoneOwnerError } = await admin.from("student_records")
-        .select("id").in("phone_number", phoneVariants(normalized)).neq("id", candidate.id).limit(1).maybeSingle();
-      if (phoneOwnerError) return json({ error: "Could not verify this phone number. Please try again." }, 500, origin);
-      if (phoneOwner) return json({ error: "This phone number is already linked to another student record. Contact the college." }, 409, origin);
-      const currentPhone = canonicalPhone(String(candidate.phone_number ?? ""));
-      if (currentPhone && currentPhone !== normalized) return json({ error: "This student record is already linked to a different phone number. Contact the college to update it." }, 409, origin);
-      const { error: claimUpdateError } = await admin.from("student_records")
-        .update({ phone_number: normalized, updated_at: new Date().toISOString() })
-        .eq("id", candidate.id);
-      if (claimUpdateError) return json({ error: "Could not link your phone to the student record. Please try again." }, 500, origin);
-      await admin.from("audit_events").insert({ actor_student_id: candidate.id, event_type: "student.record_claimed", entity_type: "student_record", entity_id: candidate.id, details: { phone_verified: true } });
-      return json({ success: true }, 200, origin);
+      const { data: existingLink, error: existingLinkError } = await admin.from("student_records")
+        .select("id,registration_number,auth_email").eq("auth_user_id", user.id).maybeSingle();
+      if (existingLinkError) return json({ error: "Could not verify your student account link." }, 500, origin);
+      if (existingLink) {
+        if ((existingLink.auth_email ?? "").toLowerCase() !== email) {
+          return json({ error: "The verified email does not match the email linked to this account. Contact the college." }, 409, origin);
+        }
+        return json({ success: true, linked: true }, 200, origin);
+      }
+      const registrationNumber = text(user.user_metadata?.registration_number, 100).toUpperCase();
+      if (!registrationNumber) return json({ error: "Student setup could not be resumed. Return to the Student Portal and start again." }, 400, origin);
+      const { data: candidate, error: candidateError } = await admin.from("student_records")
+        .select("id,registration_number,auth_user_id").eq("registration_number", registrationNumber).maybeSingle();
+      if (candidateError) return json({ error: "Could not verify the imported student record." }, 500, origin);
+      if (!candidate) return json({ error: "No imported student record matches this account." }, 404, origin);
+      if (candidate.auth_user_id && candidate.auth_user_id !== user.id) {
+        return json({ error: "This student record is already linked to another account. Contact the college for recovery." }, 409, origin);
+      }
+      const { data: paidRows, error: paidError } = await admin.from("payment_transactions")
+        .select("id,session_student_id,registration_number_snapshot,payer_email,status")
+        .eq("registration_number_snapshot", candidate.registration_number)
+        .eq("payer_email", email).eq("status", "successful").order("verified_at", { ascending: false }).limit(10);
+      if (paidError) return json({ error: "Could not verify the payment linked to this email." }, 500, origin);
+      let validPayment = false;
+      for (const payment of paidRows ?? []) {
+        const { data: paidSession } = await admin.from("session_students").select("student_id,payment_unlocked_at")
+          .eq("id", payment.session_student_id).maybeSingle();
+        if (paidSession && paidSession.student_id === candidate.id && paidSession.payment_unlocked_at) { validPayment = true; break; }
+      }
+      if (!validPayment) return json({ error: "Use the same verified email address that received the Paystack payment receipt for this registration number." }, 403, origin);
+      const now = new Date().toISOString();
+      const { data: linkedRecord, error: linkError } = await admin.from("student_records").update({
+        auth_user_id: user.id, auth_email: email, recovery_email: email,
+        recovery_email_verified_at: now, account_setup_completed_at: now, updated_at: now,
+      }).eq("id", candidate.id).is("auth_user_id", null).select("id").maybeSingle();
+      if (linkError || !linkedRecord) {
+        console.error("student-portal account link failed", { code: linkError?.code ?? "record_already_linked" });
+        return json({ error: "Could not safely link this student account. Contact the college if this persists." }, 409, origin);
+      }
+      await admin.from("audit_events").insert({
+        actor_student_id: candidate.id, event_type: "student.account_linked", entity_type: "student_record",
+        entity_id: candidate.id, details: { registration_number: candidate.registration_number, verified_email: email },
+      });
+      return json({ success: true, linked: true }, 200, origin);
     }
 
-    const { data: possibleStudents, error: studentError } = await admin.from("student_records")
-      .select("id,registration_number,full_name,department_id,programme_id,gender,permanent_address,phone_number")
-      .in("phone_number", phoneVariants(normalized));
+    const { data: student, error: studentError } = await admin.from("student_records")
+      .select("id,registration_number,full_name,department_id,programme_id,gender,permanent_address,phone_number,auth_user_id")
+      .eq("auth_user_id", user.id).maybeSingle();
     if (studentError) {
       console.error("student-portal student lookup failed", { code: studentError.code });
-      return json({ error: "Could not verify your college record. Please try again later." }, 500, origin);
+      return json({ error: "Could not load your student account. Please try again later." }, 500, origin);
     }
-    const matched = (possibleStudents ?? []).filter((row) => canonicalPhone(String(row.phone_number ?? "")) === normalized);
-    if (matched.length !== 1) return json({ error: "This verified phone number does not match one unique college student record. Contact the college clearance office." }, 403, origin);
-    const student = matched[0] as any;
+    if (!student) return json({ error: "This account is not linked to a student record. Use the Student Portal registration lookup or contact the college." }, 403, origin);
 
     if (action === "confirm_profile") {
       if (!sessionStudentId) return json({ error: "Clearance session is required." }, 400, origin);

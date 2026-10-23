@@ -9,26 +9,22 @@ type ProgrammeOption = { id: string; department_id: string; code: string; name: 
 type Requirement = { id: string; office_name: string; office_code: string; instructions: string | null; required: boolean; status: string; requested_at: string | null; decision_at: string | null; comments: { id: string; comment_text: string; author_role: string; created_at: string }[] };
 type StudentSession = { id: string; session_id: string; session_name: string; academic_session: string | null; active: boolean; opens_at: string | null; closes_at: string | null; payment_unlocked_at: string | null; profile_confirmed_at: string | null; final_assent: string; final_assent_remarks: string | null; completed_at: string | null; requirements: Requirement[] };
 type Dashboard = { student: Student; clearance_fee_kobo: number; sessions: StudentSession[]; departments: DepartmentOption[]; programmes: ProgrammeOption[] };
+type LookupResult = { student: { registration_number: string; full_name: string }; account_ready: boolean; auth_email: string | null; payment_verified: boolean; payment_pending: boolean; clearance_fee_kobo: number; session_available: boolean };
 
-function toE164(value: string) {
-  const raw = value.trim();
-  if (raw.startsWith('+') && /^\+\d{10,15}$/.test(raw)) return raw;
-  const digits = raw.replace(/\D/g, '');
-  if (digits.startsWith('234') && digits.length === 13) return '+' + digits;
-  if (digits.startsWith('0') && digits.length === 11) return '+234' + digits.slice(1);
-  if (digits.length === 10) return '+234' + digits;
-  throw new Error('Enter a valid Nigerian phone number, e.g. 08012345678 or +2348012345678.');
-}
 const dateText = (value: string | null) => value ? new Date(value).toLocaleString() : '—';
 const statusText = (value: string) => value.replaceAll('_', ' ');
 
 export default function StudentPortal() {
   const [session, setSession] = useState<Session | null>(null);
-  const [phone, setPhone] = useState('');
   const [registrationNumber, setRegistrationNumber] = useState('');
-  const [claimName, setClaimName] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
+  const [lookup, setLookup] = useState<LookupResult | null>(null);
+  const [authStep, setAuthStep] = useState<'registration' | 'confirm' | 'password' | 'payment' | 'setup' | 'reset'>('registration');
+  const [password, setPassword] = useState('');
+  const [accessCode, setAccessCode] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState('');
@@ -43,6 +39,12 @@ export default function StudentPortal() {
 
   const loadDashboard = useCallback(async () => {
     setLoading(true); setError('');
+    const { data: linkData, error: linkError } = await supabase.functions.invoke('student-portal', { body: { action: 'link_account' } });
+    if (linkError || linkData?.error) {
+      setLoading(false); setDashboard(null);
+      setError(linkError ? await describeFunctionError(linkError, 'student-portal', 'Could not finish student account setup.') : String(linkData.error));
+      return;
+    }
     const { data, error: invokeError } = await supabase.functions.invoke('student-portal', { body: { action: 'dashboard' } });
     setLoading(false);
     if (invokeError || data?.error) {
@@ -60,7 +62,8 @@ export default function StudentPortal() {
   }, []);
 
   useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
       setSession(nextSession);
       if (!nextSession) setDashboard(null);
     });
@@ -71,37 +74,231 @@ export default function StudentPortal() {
     return () => listener.subscription.unsubscribe();
   }, [loadDashboard]);
 
-  async function sendOtp(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setAuthBusy(true); setError(''); setNotice('');
-    let normalized = '';
-    try { normalized = toE164(phone); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Enter a valid phone number.'); setAuthBusy(false); return; }
-    const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalized });
-    setAuthBusy(false);
-    if (otpError) { setError('Could not send a verification code. Confirm that student SMS sign-in is enabled for the college project.'); return; }
-    setPhone(normalized); setOtpSent(true); setNotice('A verification code has been sent if this phone number can receive SMS.');
-  }
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get('reference') || params.get('trxref');
+    if (!reference) return;
+    setPaymentReference(reference);
+    window.sessionStorage.removeItem('dscp-payment-email');
+    window.history.replaceState({}, '', window.location.pathname);
+    let cancelled = false;
+    void (async () => {
+      setAuthBusy(true); setError(''); setNotice('Checking your Paystack payment securely…');
+      const { data: verified, error: verifyError } = await supabase.functions.invoke('student-payments', {
+        body: { action: 'verify', payload: { reference } },
+      });
+      if (cancelled) return;
+      if (verifyError || verified?.error || !verified?.registration_number) {
+        setAuthBusy(false); setNotice('');
+        setError(verifyError ? await describeFunctionError(verifyError, 'student-payments', 'Could not verify your payment.') : String(verified?.error || 'Payment verification could not be completed.'));
+        return;
+      }
+      const reg = String(verified.registration_number);
+      setRegistrationNumber(reg);
+      const { data: record, error: lookupError } = await supabase.functions.invoke('student-portal', {
+        body: { action: 'lookup_record', payload: { registration_number: reg } },
+      });
+      if (cancelled) return;
+      setAuthBusy(false); setNotice('');
+      if (lookupError || record?.error) {
+        setError(lookupError ? await describeFunctionError(lookupError, 'student-portal', 'Payment was verified, but the student record could not be reloaded.') : String(record.error));
+        return;
+      }
+      const found = record as LookupResult;
+      setLookup(found);
+      setAuthStep(found.account_ready ? 'password' : found.payment_verified ? 'setup' : 'payment');
+      setNotice(found.payment_verified ? 'Payment verified. Continue setting up your student account; do not pay again.' : 'Payment reference checked. Follow the next step shown below.');
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-  async function verifyOtp(event: FormEvent<HTMLFormElement>) {
+  async function lookupRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setAuthBusy(true); setError(''); setNotice('');
-    const normalized = toE164(phone);
-    const { data, error: verifyError } = await supabase.auth.verifyOtp({ phone: normalized, token: otp.trim(), type: 'sms' });
-    if (verifyError || !data.session) { setAuthBusy(false); setError('Verification failed. Check the code or request a new one.'); return; }
-    const { data: claimResult, error: claimError } = await supabase.functions.invoke('student-portal', { body: { action: 'claim_record', payload: { registration_number: registrationNumber.trim(), full_name: claimName.trim() } } });
+    const { data, error: invokeError } = await supabase.functions.invoke('student-portal', { body: { action: 'lookup_record', payload: { registration_number: registrationNumber.trim().toUpperCase() } } });
     setAuthBusy(false);
-    if (claimError || claimResult?.error) {
-      await supabase.auth.signOut();
-      setSession(null);
-      setError(claimError ? await describeFunctionError(claimError, 'student-portal', 'Could not link your student record.') : String(claimResult.error));
+    if (invokeError || data?.error) {
+      setLookup(null); setAuthStep('registration');
+      setError(invokeError ? await describeFunctionError(invokeError, 'student-portal', 'Could not check this registration number.') : String(data.error));
       return;
     }
-    setSession(data.session); setNotice('Phone verified. Loading your college record…');
+    const found = data as LookupResult;
+    setLookup(found); setAuthStep(found.account_ready ? 'password' : found.payment_verified ? 'setup' : 'confirm');
+  }
+
+  async function continueAfterConfirmation() {
+    if (!lookup) return;
+    setError(''); setNotice('');
+    if (lookup.account_ready) { setAuthStep('password'); return; }
+    if (lookup.payment_verified) { setAuthStep('setup'); return; }
+    if (!lookup.session_available) { setError('The college has not opened a clearance session yet. No payment is due until the session is available.'); return; }
+    if (lookup.payment_pending) {
+      setNotice('A previous payment is still pending. Enter its Paystack reference below to verify it before attempting another payment.');
+      setAuthStep('payment'); return;
+    }
+    setAuthStep('payment');
+  }
+
+  async function startPayment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!lookup) return;
+    setAuthBusy(true); setError(''); setNotice('');
+    const { data, error: paymentError } = await supabase.functions.invoke('student-payments', {
+      body: { action: 'initiate', payload: { registration_number: lookup.student.registration_number } },
+    });
+    setAuthBusy(false);
+    if (paymentError || data?.error) {
+      setError(paymentError ? await describeFunctionError(paymentError, 'student-payments', 'Could not start payment.') : String(data.error));
+      return;
+    }
+    if (data?.already_paid) {
+      const { data: refreshed, error: refreshError } = await supabase.functions.invoke('student-portal', {
+        body: { action: 'lookup_record', payload: { registration_number: lookup.student.registration_number } },
+      });
+      if (refreshError || refreshed?.error) {
+        setError('A previous payment exists, but the student record could not be reloaded. Return to registration lookup and retry; do not pay again.');
+        return;
+      }
+      const found = refreshed as LookupResult;
+      setLookup(found);
+      setNotice('A verified payment already exists. Continue account setup; do not pay again.');
+      setAuthStep(found.payment_verified && !found.account_ready ? 'setup' : found.account_ready ? 'password' : 'payment');
+      return;
+    }
+    if (!data?.authorization_url) { setError('Paystack did not return a payment link. Please try again.'); return; }
+    window.location.assign(String(data.authorization_url));
+  }
+
+  async function contactSupport() {
+    if (!lookup) return;
+    setAuthBusy(true); setError(''); setNotice('');
+    const { data, error: supportError } = await supabase.functions.invoke('manage-student-access', { body: { action: 'get_support_number' } });
+    setAuthBusy(false);
+    if (supportError || data?.error) {
+      setError(supportError ? await describeFunctionError(supportError, 'manage-student-access', 'Could not load the support contact.') : String(data?.error));
+      return;
+    }
+    const number = String(data?.whatsapp || '').replace(/[^0-9]/g, '');
+    if (!number) { setError('The college has not configured its WhatsApp support number yet. Contact the Registrar’s office.'); return; }
+    const message = `Hello, I need help confirming my clearance payment. Registration number: ${lookup.student.registration_number}.`;
+    window.location.assign(`https://wa.me/${number}?text=${encodeURIComponent(message)}`);
+  }
+
+  async function verifyPaymentReference() {
+    const reference = paymentReference.trim();
+    if (!reference) { setError('Enter the Paystack reference from your payment page or receipt.'); return; }
+    setAuthBusy(true); setError(''); setNotice('Checking the existing payment reference…');
+    const { data, error: verifyError } = await supabase.functions.invoke('student-payments', {
+      body: { action: 'verify', payload: { reference } },
+    });
+    setAuthBusy(false);
+    if (verifyError || data?.error || !data?.registration_number) {
+      setNotice('');
+      setError(verifyError ? await describeFunctionError(verifyError, 'student-payments', 'Could not verify the existing payment.') : String(data?.error || 'Payment could not be verified.'));
+      return;
+    }
+    const { data: record, error: lookupError } = await supabase.functions.invoke('student-portal', {
+      body: { action: 'lookup_record', payload: { registration_number: data.registration_number } },
+    });
+    if (lookupError || record?.error) {
+      setNotice('');
+      setError(lookupError ? await describeFunctionError(lookupError, 'student-portal', 'Payment was verified, but the student record could not be reloaded.') : String(record.error));
+      return;
+    }
+    const found = record as LookupResult;
+    setLookup(found); setRegistrationNumber(found.student.registration_number);
+    setAuthStep(found.account_ready ? 'password' : found.payment_verified ? 'setup' : 'payment');
+    setNotice(found.payment_verified ? 'Payment verified. Continue account setup; do not pay again.' : 'Payment status checked. Follow the next step below.');
+  }
+
+  async function createStudentAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!lookup) return;
+    if (!accessCode.trim()) { setError('Enter the one-time activation code issued by the college.'); return; }
+    if (password.length < 8) { setError('Choose a password with at least 8 characters.'); return; }
+    if (password !== confirmNewPassword) { setError('The passwords do not match.'); return; }
+    setAuthBusy(true); setError(''); setNotice('');
+    const { data, error: activationError } = await supabase.functions.invoke('manage-student-access', {
+      body: { action: 'complete_activation', payload: { registration_number: lookup.student.registration_number, code: accessCode, password } },
+    });
+    if (activationError || data?.error || !data?.auth_email) {
+      setAuthBusy(false);
+      setError(activationError ? await describeFunctionError(activationError, 'manage-student-access', 'Could not activate the student account.') : String(data?.error || 'Account activation could not be completed.'));
+      return;
+    }
+    const { data: signedIn, error: signInError } = await supabase.auth.signInWithPassword({ email: String(data.auth_email), password });
+    setAuthBusy(false);
+    if (signInError || !signedIn.session) {
+      setNotice('Your account was activated. Return to registration lookup and sign in with the password you just created.');
+      setAuthStep('password'); setPassword(''); setConfirmNewPassword(''); setAccessCode('');
+      return;
+    }
+    setSession(signedIn.session);
+    setPassword(''); setConfirmNewPassword(''); setAccessCode('');
+    await loadDashboard();
+  }
+
+  async function signInStudent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!lookup?.auth_email) { setError('This student account is not ready for password sign-in.'); return; }
+    setAuthBusy(true); setError(''); setNotice('');
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: lookup.auth_email, password });
+    setAuthBusy(false);
+    if (signInError || !data.session) { setError('Sign-in failed. Check your password or use password recovery.'); return; }
+    setSession(data.session); await loadDashboard();
+  }
+
+  async function requestPasswordReset() {
+    setError('');
+    setNotice('For your protection, password recovery must be initiated by an authorised college administrator. Contact the college and ask for a one-time reset code.');
+    setAuthStep('reset');
+    setAccessCode(''); setNewPassword(''); setConfirmNewPassword('');
+  }
+
+  async function completePasswordReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!lookup) { setError('Return to registration lookup and enter your registration number first.'); return; }
+    if (!accessCode.trim()) { setError('Enter the password-reset code issued by the college.'); return; }
+    if (newPassword.length < 8) { setError('Choose a password with at least 8 characters.'); return; }
+    if (newPassword !== confirmNewPassword) { setError('The passwords do not match.'); return; }
+    setAuthBusy(true); setError(''); setNotice('');
+    const { data, error: resetError } = await supabase.functions.invoke('manage-student-access', {
+      body: { action: 'complete_password_reset', payload: { registration_number: lookup.student.registration_number, code: accessCode, password: newPassword } },
+    });
+    if (resetError || data?.error) {
+      setAuthBusy(false);
+      setError(resetError ? await describeFunctionError(resetError, 'manage-student-access', 'Could not reset the password.') : String(data?.error || 'Password reset could not be completed.'));
+      return;
+    }
+    const authEmail = lookup.auth_email;
+    if (!authEmail) { setAuthBusy(false); setError('Password was changed, but the sign-in identifier could not be loaded. Return to registration lookup and try again.'); return; }
+    const { data: signedIn, error: signInError } = await supabase.auth.signInWithPassword({ email: authEmail, password: newPassword });
+    setAuthBusy(false);
+    if (signInError || !signedIn.session) {
+      setNotice('Password reset completed. Return to registration lookup and sign in with your new password.');
+      setAuthStep('password'); setNewPassword(''); setConfirmNewPassword(''); setAccessCode('');
+      return;
+    }
+    setSession(signedIn.session);
+    setNewPassword(''); setConfirmNewPassword(''); setAccessCode('');
+    await loadDashboard();
+  }
+
+  async function saveNewPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newPassword.length < 8) { setError('Choose a password with at least 8 characters.'); return; }
+    if (newPassword !== confirmNewPassword) { setError('The passwords do not match.'); return; }
+    setAuthBusy(true); setError(''); setNotice('');
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+    setAuthBusy(false);
+    if (updateError) { setError('The password could not be updated. Reopen the latest password-reset link and try again.'); return; }
+    setRecoveryMode(false); setNewPassword(''); setConfirmNewPassword('');
+    setNotice('Your password has been updated.');
     await loadDashboard();
   }
 
   async function signOut() {
     await supabase.auth.signOut();
-    setSession(null); setDashboard(null); setOtpSent(false); setOtp(''); setNotice('You have signed out.');
+    setSession(null); setDashboard(null); setRegistrationNumber(''); setLookup(null); setAuthStep('registration'); setPassword(''); setRecoveryMode(false); setNewPassword(''); setConfirmNewPassword(''); setNotice('You have signed out.');
   }
 
   async function invokeStudent(action: string, payload: Record<string, unknown> = {}) {
@@ -133,27 +330,28 @@ export default function StudentPortal() {
 
   if (!session) return (
     <main className="auth-layout">
-      <section className="brand-panel">
-        <div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div>
-        <div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Your clearance, in one place.</h1><p>Verify your phone to view your official student record and track final-year clearance.</p></div>
-        <p className="panel-footnote">Student access · Secure phone verification</p>
-      </section>
-      <section className="form-panel">
-        <form className="login-card" onSubmit={otpSent ? verifyOtp : sendOtp}>
-          <p className="eyebrow dark">STUDENT PORTAL</p><h2>{otpSent ? 'Verify your phone' : 'Student sign in'}</h2>
-          <p className="muted">Enter the name and registration number on the college register, then verify a phone number you can access. You will add your remaining particulars after signing in.</p>
-          {error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}
-          <label htmlFor="student-registration">Registration number</label>
-          <input id="student-registration" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} maxLength={100} required disabled={otpSent} placeholder="Your official registration number" />
-          <label htmlFor="student-claim-name">Name as shown on the college register</label>
-          <input id="student-claim-name" value={claimName} onChange={(e) => setClaimName(e.target.value)} maxLength={160} required disabled={otpSent} placeholder="Your registered name" />
-          <label htmlFor="student-phone">Your mobile phone number</label>
-          <input id="student-phone" type="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="08012345678" required disabled={otpSent} />
-          {otpSent && <><label htmlFor="student-otp">SMS verification code</label><input id="student-otp" inputMode="numeric" autoComplete="one-time-code" value={otp} onChange={(e) => setOtp(e.target.value)} minLength={6} maxLength={8} required placeholder="Enter code" /><button className="text-button" type="button" onClick={() => { setOtpSent(false); setOtp(''); setError(''); }}>Change phone number</button></>}
-          <button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Please wait…' : otpSent ? 'Verify and continue' : 'Send verification code'}<span aria-hidden="true">→</span></button>
-          <p className="security-note">If your college-recorded phone number is outdated or shared, contact the college to correct it. Do not use another student's phone number.</p>
-        </form><footer className="page-footer">COHT Digital Student Clearance Platform</footer>
-      </section>
+      <section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Your clearance, in one place.</h1><p>Use your official registration number to access student clearance.</p></div><p className="panel-footnote">Student access · Password sign-in</p></section>
+      <section className="form-panel"><form className="login-card" onSubmit={authStep === 'registration' ? lookupRecord : authStep === 'password' ? signInStudent : authStep === 'payment' ? startPayment : authStep === 'setup' ? createStudentAccount : authStep === 'reset' ? completePasswordReset : (e) => { e.preventDefault(); void continueAfterConfirmation(); }}>
+        <p className="eyebrow dark">STUDENT PORTAL</p>
+        <h2>{authStep === 'registration' ? 'Find your student record' : authStep === 'confirm' ? 'Confirm your record' : authStep === 'password' ? 'Welcome back' : authStep === 'payment' ? 'Clearance payment' : authStep === 'reset' ? 'Reset your password' : 'Create your password'}</h2>
+        <p className="muted">{authStep === 'registration' ? 'Enter your registration number to continue.' : authStep === 'confirm' ? 'Check that the registered name below belongs to you.' : authStep === 'password' ? 'Enter your password. Your registration number is already confirmed.' : authStep === 'payment' ? 'Your record is found. The clearance fee must be paid before account setup.' : authStep === 'reset' ? 'Enter the one-time reset code issued by an authorised college administrator.' : 'Your payment is recorded. Verify your activation code and choose a private password.'}</p>
+        {error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}
+        {authStep === 'registration' && <><label htmlFor="student-registration">Registration number</label><input id="student-registration" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} maxLength={100} required autoComplete="off" placeholder="Your official registration number" /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Checking record…' : 'Continue'}<span aria-hidden="true">→</span></button></>}
+        {authStep === 'confirm' && lookup && <><div className="panel"><p className="muted">Registered name</p><h2>{lookup.student.full_name}</h2><p className="clearance-reg">{lookup.student.registration_number}</p><p>Hello, are you {lookup.student.full_name}?</p></div><button className="primary-button" type="submit">Yes, that's me <span aria-hidden="true">→</span></button><button className="secondary-button" type="button" onClick={() => { setLookup(null); setRegistrationNumber(''); setAccessCode(''); setPaymentReference(''); setAuthStep('registration'); setError(''); }}>No, enter the correct registration number</button></>}
+        {authStep === 'password' && <><label htmlFor="student-password">Password</label><input id="student-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Signing in…' : 'Sign in'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => void requestPasswordReset()} disabled={authBusy}>Forgot password? Contact an administrator</button></>}
+        {authStep === 'payment' && lookup && <><div className="panel"><p className="muted">Student</p><h3>{lookup.student.full_name}</h3><p className="clearance-reg">{lookup.student.registration_number}</p><h2>₦{(lookup.clearance_fee_kobo / 100).toLocaleString('en-NG')}</h2></div>{lookup.payment_pending && <><p className="field-note">A previous payment is still being reconciled. Verify its reference before starting another payment.</p><label htmlFor="student-payment-reference">Existing Paystack reference</label><input id="student-payment-reference" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} maxLength={200} autoComplete="off" placeholder="DSCP-…" /><button className="secondary-button" type="button" disabled={authBusy || !paymentReference.trim()} onClick={() => void verifyPaymentReference()}>{authBusy ? 'Verifying…' : 'Verify previous payment'}</button></>}{!lookup.payment_pending && <><p className="field-note">You do not need a personal email account to use the student portal. If you have already paid, do not pay again.</p><button className="primary-button" type="submit" disabled={authBusy || !lookup.session_available}>{authBusy ? 'Connecting to Paystack…' : 'Pay clearance fee'}<span aria-hidden="true">→</span></button></>}</>}
+        {authStep === 'setup' && <><div className="panel"><p className="muted">Verified clearance payment</p><h3>{lookup?.student.full_name}</h3><p className="clearance-reg">{lookup?.student.registration_number}</p><h2>₦{((lookup?.clearance_fee_kobo || 0) / 100).toLocaleString('en-NG')}</h2></div><p className="field-note">Enter the single-use activation code issued by an authorised college staff member. The code expires after 30 minutes. Do not share your password with staff.</p><label htmlFor="student-activation-code">One-time activation code</label><input id="student-activation-code" value={accessCode} onChange={(e) => setAccessCode(e.target.value.toUpperCase())} minLength={8} maxLength={40} autoComplete="one-time-code" required /><label htmlFor="student-new-password">Create password</label><input id="student-new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><label htmlFor="student-confirm-new-password">Confirm password</label><input id="student-confirm-new-password" type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Activating account…' : 'Activate and set password'}<span aria-hidden="true">→</span></button></>}
+        {authStep === 'reset' && <><p className="field-note">An authorised college administrator must verify your identity and issue a reset code. The administrator cannot see the new password you choose.</p><label htmlFor="student-reset-code">One-time password-reset code</label><input id="student-reset-code" value={accessCode} onChange={(e) => setAccessCode(e.target.value.toUpperCase())} minLength={8} maxLength={40} autoComplete="one-time-code" required /><label htmlFor="student-reset-password">New password</label><input id="student-reset-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><label htmlFor="student-reset-confirm">Confirm new password</label><input id="student-reset-confirm" type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Resetting password…' : 'Set new password'}<span aria-hidden="true">→</span></button></>}
+        {authStep === 'payment' && <button className="secondary-button" type="button" onClick={() => void contactSupport()} disabled={authBusy}>Already paid? Contact support on WhatsApp</button>}
+        {authStep !== 'registration' && <button className="text-button" type="button" onClick={() => { setAuthStep('registration'); setLookup(null); setRegistrationNumber(''); setPassword(''); setAccessCode(''); setPaymentReference(''); setError(''); setNotice(''); }}>Use another registration number</button>}
+      </form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section>
+    </main>
+  );
+
+  if (recoveryMode && session) return (
+    <main className="auth-layout">
+      <section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Secure your account.</h1><p>Choose a new password to regain access to your student clearance.</p></div></section>
+      <section className="form-panel"><form className="login-card" onSubmit={saveNewPassword}><p className="eyebrow dark">PASSWORD RECOVERY</p><h2>Set a new password</h2><p className="muted">Use at least 8 characters and keep it private.</p>{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="student-reset-password">New password</label><input id="student-reset-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><label htmlFor="student-reset-confirm">Confirm new password</label><input id="student-reset-confirm" type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Updating password…' : 'Update password'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => void signOut()}>Cancel and sign out</button></form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section>
     </main>
   );
 
@@ -166,10 +364,10 @@ export default function StudentPortal() {
       {!loading && !dashboard && <div className="panel"><h2>Student record not available</h2><p className="muted">Your verified phone number could not be linked to a matching name and registration number, or no clearance session has been assigned. Check your details or contact the college clearance office.</p><button className="secondary-button" type="button" onClick={() => void loadDashboard()}>Try again</button></div>}
       {dashboard && <>
         <section className="content-grid">
-          <article className="panel account-panel"><div className="panel-heading"><div><p className="eyebrow dark">OFFICIAL RECORD</p><h2>Student particulars</h2></div><span className="status-pill"><span /> Verified phone</span></div>
+          <article className="panel account-panel"><div className="panel-heading"><div><p className="eyebrow dark">OFFICIAL RECORD</p><h2>Student particulars</h2></div><span className="status-pill"><span /> Account verified</span></div>
             <dl className="details-list"><div><dt>Registration number</dt><dd>{dashboard.student.registration_number}</dd></div><div><dt>Department</dt><dd>{dashboard.student.department || 'Not assigned'}</dd></div><div><dt>Programme</dt><dd>{dashboard.student.programme || 'Not assigned'}</dd></div><div><dt>Phone</dt><dd>{dashboard.student.phone_number || 'Verified sign-in phone'}</dd></div></dl>
           </article>
-          <article className="panel roles-panel"><div className="panel-heading"><div><p className="eyebrow dark">CLEARANCE FEE</p><h2>₦{(dashboard.clearance_fee_kobo / 100).toLocaleString('en-NG')}</h2></div></div><p className="muted">Payment must be verified before clearance requests can be submitted.</p><span className="directory-status inactive">Payment status is checked by the server</span><p className="field-note">Online payment initiation is not yet connected. Do not pay into a personal account; use only a payment option officially announced by the college.</p></article>
+          <article className="panel roles-panel"><div className="panel-heading"><div><p className="eyebrow dark">CLEARANCE FEE</p><h2>₦{(dashboard.clearance_fee_kobo / 100).toLocaleString('en-NG')}</h2></div></div><p className="muted">Payment must be verified before clearance requests can be submitted.</p><span className="directory-status inactive">Payment status is checked by the server</span><p className="field-note">If your payment status appears incorrect, return to the Student Portal payment screen and use “Already paid? Contact support on WhatsApp.”</p></article>
         </section>
         {!dashboard.sessions.length && <div className="panel"><h2>No clearance session assigned</h2><p className="muted">Your college record is recognised, but an active clearance session has not been assigned yet. Contact the clearance administrator.</p></div>}
         {dashboard.sessions.map((item) => <section className="panel clearance-request-card" key={item.id}>
