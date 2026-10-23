@@ -84,10 +84,34 @@ Deno.serve(async (req) => {
         auth_email: candidate.auth_user_id && candidate.auth_email ? candidate.auth_email : null,
         payment_verified: paymentVerified,
         payment_pending: paymentPending,
-        payment_email: paymentEmail,
         clearance_fee_kobo: Number.isFinite(feeValue) && feeValue > 0 ? feeValue : 170000,
         session_available: Boolean(activeSession),
       }, 200, origin);
+    }
+
+    if (action === "validate_payment_email") {
+      const registrationNumber = text(payload.registration_number, 100).toUpperCase();
+      const email = text(payload.email, 254).toLowerCase();
+      if (!registrationNumber || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+        return json({ error: "Enter the registration number and the email used for payment." }, 400, origin);
+      }
+      const { data: candidate, error: candidateError } = await admin.from("student_records")
+        .select("id,registration_number,auth_user_id").eq("registration_number", registrationNumber).maybeSingle();
+      if (candidateError) return json({ error: "Could not check the payment details." }, 500, origin);
+      if (!candidate) return json({ error: "The registration number and payment email could not be verified together." }, 403, origin);
+      if (candidate.auth_user_id) return json({ error: "This student record already has an account. Sign in or use password recovery." }, 409, origin);
+      const { data: paidRows, error: paidError } = await admin.from("payment_transactions")
+        .select("id,session_student_id").eq("registration_number_snapshot", candidate.registration_number)
+        .eq("payer_email", email).eq("status", "successful").order("verified_at", { ascending: false }).limit(10);
+      if (paidError) return json({ error: "Could not check the payment details." }, 500, origin);
+      for (const payment of paidRows ?? []) {
+        const { data: paidSession } = await admin.from("session_students").select("student_id,payment_unlocked_at")
+          .eq("id", payment.session_student_id).maybeSingle();
+        if (paidSession?.student_id === candidate.id && paidSession.payment_unlocked_at) {
+          return json({ success: true, valid: true }, 200, origin);
+        }
+      }
+      return json({ error: "That email does not match a verified clearance payment for this registration number. Use the receipt email, or contact the college if you need help." }, 403, origin);
     }
 
     const authorization = req.headers.get("Authorization");
