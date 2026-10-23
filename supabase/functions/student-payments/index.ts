@@ -107,7 +107,9 @@ Deno.serve(async (req) => {
       admin.from("staff_profiles").select("user_id,active").eq("user_id", authData.user.id).maybeSingle(),
       admin.from("staff_role_assignments").select("role").eq("user_id", authData.user.id).eq("active", true).in("role", ["admin", "superadmin"]),
     ]);
-    if (!profile?.active || !roles?.length) return reply({ error: "Only an active Administrator or SuperAdmin can pay for a student." }, 403, origin);
+    const hasAdminRole = (roles ?? []).some((item) => item.role === "admin");
+    const hasSuperAdminRole = (roles ?? []).some((item) => item.role === "superadmin");
+    if (!profile?.active || !hasAdminRole || hasSuperAdminRole) return reply({ error: "Only an active Administrator (not SuperAdmin) can initiate an assisted student payment." }, 403, origin);
     actorUserId = authData.user.id;
     email = text(authData.user.email, 254).toLowerCase();
   } else {
