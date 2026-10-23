@@ -83,3 +83,33 @@ Therefore, student dashboard and Provost queue cannot be tested end-to-end until
 - Updated `src/components/StudentImport.tsx`, `src/components/StudentPortal.tsx`, `supabase/functions/import-students/index.ts`, and `supabase/functions/student-portal/index.ts` in GitHub main. Student portal Edge Function redeployed with JWT verification enabled. No student records imported and no live data changed by this code edit.
 - Important limitation: the claim process currently matches the official name and registration number and verifies phone ownership by SMS. This is not equivalent to an independent identity document check; monitor first-time claims and provide a college correction/recovery process.
 - Next: when network connectivity to GitHub returns, pull main locally, run `npm run build`, deploy the frontend with `npx wrangler deploy`, then test using one dummy student row. Verify the template headers are exactly `name,registration_number`, validate/import one test record, claim it using a test phone, and complete the student profile. Do not import the full register until the end-to-end test passes.
+
+
+## Current handoff — 2026-10-23: student password/payment flow
+
+Work branch: `feature/student-password-payment-flow`  
+Draft PR: https://github.com/olusamdev/digital-student-clearance-platform/pull/1
+
+### Completed
+- Applied additive migration `20261023064959_student_password_accounts.sql` to DSCP Supabase project `cipsazscgpyoaxwukmaw` (NOT the COHT CBT project).
+- Added student Auth-link fields and durable payment registration/email audit fields.
+- Added `student-payments` Edge Function source for Paystack initiation, verification and signed webhook reconciliation.
+- Connected the student UI to registration lookup, checkout redirect, callback verification, recovery by existing Paystack reference, and password account setup.
+- Added server-side account linking: requires a confirmed Auth email matching a successful payment's payer email; prevents overwriting an already-linked student record.
+- Added `verify_jwt = false` for the webhook/payment function in local Supabase config. When deployed, the function must be deployed with JWT verification disabled because webhook requests are authenticated by Paystack HMAC; browser actions still enforce origin checks and use unpredictable references.
+
+### Not yet deployed or tested
+- Do not deploy the updated `student-portal` Edge Function before deploying the matching frontend; the existing live UI still uses the old phone-claim action.
+- Do not deploy `student-payments` until the secret `PAYSTACK_SECRET_KEY` is set in the correct Supabase project's Edge Function secrets.
+- Verify production Auth email confirmations are enabled and `https://dscp.olusamdev.workers.dev/student` is allow-listed for email confirmation/reset redirects. The code rejects account linking until Auth reports the email as confirmed.
+- GitHub Actions has not returned a build run; no successful build/test claim can be made yet.
+- Live DB currently has no imported student records, no active clearance session, and no enabled required clearance requirements. A controlled student/session test fixture is needed.
+- Payment-email matching verifies access to the receipt email, not legal identity by itself. The college must approve this as the onboarding check or provide a stronger identity-verification step before broad public launch.
+
+### Next actions, in order
+1. Review the draft PR and obtain a passing frontend build.
+2. Verify production Auth confirmation + redirect settings and configure `PAYSTACK_SECRET_KEY` securely.
+3. Import a controlled test student and configure an active clearance session plus required office requirements.
+4. Test payment success, failed/cancelled payment, callback interruption, duplicate-charge prevention, email verification, account linking, password sign-in/reset, and staff-account exclusion.
+5. Deploy `student-portal` and `student-payments` to `cipsazscgpyoaxwukmaw`, then deploy the frontend only after all tests pass.
+6. Verify the live student flow and existing staff portals. Do not merge/deploy early; do not run further migrations unless needed and authorized.
