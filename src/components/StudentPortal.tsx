@@ -9,6 +9,7 @@ type ProgrammeOption = { id: string; department_id: string; code: string; name: 
 type Requirement = { id: string; office_name: string; office_code: string; instructions: string | null; required: boolean; status: string; requested_at: string | null; decision_at: string | null; comments: { id: string; comment_text: string; author_role: string; created_at: string }[] };
 type StudentSession = { id: string; session_id: string; session_name: string; academic_session: string | null; active: boolean; opens_at: string | null; closes_at: string | null; payment_unlocked_at: string | null; profile_confirmed_at: string | null; final_assent: string; final_assent_remarks: string | null; completed_at: string | null; requirements: Requirement[] };
 type Dashboard = { student: Student; clearance_fee_kobo: number; sessions: StudentSession[]; departments: DepartmentOption[]; programmes: ProgrammeOption[] };
+type LookupResult = { student: { registration_number: string; full_name: string }; account_ready: boolean; auth_email: string | null; payment_verified: boolean; payment_pending: boolean; clearance_fee_kobo: number; session_available: boolean };
 
 function toE164(value: string) {
   const raw = value.trim();
@@ -24,11 +25,10 @@ const statusText = (value: string) => value.replaceAll('_', ' ');
 
 export default function StudentPortal() {
   const [session, setSession] = useState<Session | null>(null);
-  const [phone, setPhone] = useState('');
   const [registrationNumber, setRegistrationNumber] = useState('');
-  const [claimName, setClaimName] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
+  const [lookup, setLookup] = useState<LookupResult | null>(null);
+  const [authStep, setAuthStep] = useState<'registration' | 'confirm' | 'password' | 'payment' | 'setup'>('registration');
+  const [password, setPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState('');
@@ -71,32 +71,43 @@ export default function StudentPortal() {
     return () => listener.subscription.unsubscribe();
   }, [loadDashboard]);
 
-  async function sendOtp(event: FormEvent<HTMLFormElement>) {
+  async function lookupRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setAuthBusy(true); setError(''); setNotice('');
-    let normalized = '';
-    try { normalized = toE164(phone); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Enter a valid phone number.'); setAuthBusy(false); return; }
-    const { error: otpError } = await supabase.auth.signInWithOtp({ phone: normalized });
+    const { data, error: invokeError } = await supabase.functions.invoke('student-portal', { body: { action: 'lookup_record', payload: { registration_number: registrationNumber.trim().toUpperCase() } } });
     setAuthBusy(false);
-    if (otpError) { setError('Could not send a verification code. Confirm that student SMS sign-in is enabled for the college project.'); return; }
-    setPhone(normalized); setOtpSent(true); setNotice('A verification code has been sent if this phone number can receive SMS.');
-  }
-
-  async function verifyOtp(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setAuthBusy(true); setError(''); setNotice('');
-    const normalized = toE164(phone);
-    const { data, error: verifyError } = await supabase.auth.verifyOtp({ phone: normalized, token: otp.trim(), type: 'sms' });
-    if (verifyError || !data.session) { setAuthBusy(false); setError('Verification failed. Check the code or request a new one.'); return; }
-    const { data: claimResult, error: claimError } = await supabase.functions.invoke('student-portal', { body: { action: 'claim_record', payload: { registration_number: registrationNumber.trim(), full_name: claimName.trim() } } });
-    setAuthBusy(false);
-    if (claimError || claimResult?.error) {
-      await supabase.auth.signOut();
-      setSession(null);
-      setError(claimError ? await describeFunctionError(claimError, 'student-portal', 'Could not link your student record.') : String(claimResult.error));
+    if (invokeError || data?.error) {
+      setLookup(null); setAuthStep('registration');
+      setError(invokeError ? await describeFunctionError(invokeError, 'student-portal', 'Could not check this registration number.') : String(data.error));
       return;
     }
-    setSession(data.session); setNotice('Phone verified. Loading your college record…');
-    await loadDashboard();
+    setLookup(data as LookupResult); setAuthStep('confirm');
+  }
+
+  async function continueAfterConfirmation() {
+    if (!lookup) return;
+    setError(''); setNotice('');
+    if (lookup.account_ready) { setAuthStep('password'); return; }
+    if (lookup.payment_verified) { setAuthStep('setup'); return; }
+    setAuthStep('payment');
+  }
+
+  async function signInStudent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!lookup?.auth_email) { setError('This student account is not ready for password sign-in.'); return; }
+    setAuthBusy(true); setError(''); setNotice('');
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: lookup.auth_email, password });
+    setAuthBusy(false);
+    if (signInError || !data.session) { setError('Sign-in failed. Check your password or use password recovery.'); return; }
+    setSession(data.session); await loadDashboard();
+  }
+
+  async function requestPasswordReset() {
+    if (!lookup?.auth_email) { setError('A recovery email is not configured for this account. Contact the college for account recovery.'); return; }
+    setAuthBusy(true); setError(''); setNotice('');
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(lookup.auth_email, { redirectTo: window.location.origin + '/student' });
+    setAuthBusy(false);
+    if (resetError) setError('Could not send the password-reset email. Contact the college for help.');
+    else setNotice('If a recovery email is configured, a password-reset link has been sent.');
   }
 
   async function signOut() {
