@@ -33,6 +33,6 @@ CREATE INDEX IF NOT EXISTS payment_transactions_registration_snapshot_idx
 COMMENT ON COLUMN public.student_records.auth_user_id IS
   'Student-owned Supabase Auth identity; set only by trusted server-side account setup.';
 COMMENT ON COLUMN public.student_records.auth_email IS
-  'Internal synthetic Auth email used for password sign-in; never displayed to students.';
+  'Verified student email used for password sign-in and recovery.';
 COMMENT ON COLUMN public.payment_transactions.registration_number_snapshot IS
   'Registration number captured at payment creation for durable reconciliation and audit.';
