@@ -9,7 +9,7 @@ type ProgrammeOption = { id: string; department_id: string; code: string; name: 
 type Requirement = { id: string; office_name: string; office_code: string; instructions: string | null; required: boolean; status: string; requested_at: string | null; decision_at: string | null; comments: { id: string; comment_text: string; author_role: string; created_at: string }[] };
 type StudentSession = { id: string; session_id: string; session_name: string; academic_session: string | null; active: boolean; opens_at: string | null; closes_at: string | null; payment_unlocked_at: string | null; profile_confirmed_at: string | null; final_assent: string; final_assent_remarks: string | null; completed_at: string | null; requirements: Requirement[] };
 type Dashboard = { student: Student; clearance_fee_kobo: number; sessions: StudentSession[]; departments: DepartmentOption[]; programmes: ProgrammeOption[] };
-type LookupResult = { student: { registration_number: string; full_name: string }; account_ready: boolean; auth_email: string | null; payment_verified: boolean; payment_pending: boolean; payment_email: string | null; clearance_fee_kobo: number; session_available: boolean };
+type LookupResult = { student: { registration_number: string; full_name: string }; account_ready: boolean; auth_email: string | null; payment_verified: boolean; payment_pending: boolean; clearance_fee_kobo: number; session_available: boolean };
 
 const dateText = (value: string | null) => value ? new Date(value).toLocaleString() : '—';
 const statusText = (value: string) => value.replaceAll('_', ' ');
@@ -79,6 +79,9 @@ export default function StudentPortal() {
     const reference = params.get('reference') || params.get('trxref');
     if (!reference) return;
     setPaymentReference(reference);
+    const savedEmail = window.sessionStorage.getItem('dscp-payment-email') || '';
+    window.sessionStorage.removeItem('dscp-payment-email');
+    setPayerEmail(savedEmail);
     window.history.replaceState({}, '', window.location.pathname);
     let cancelled = false;
     void (async () => {
@@ -121,14 +124,14 @@ export default function StudentPortal() {
       return;
     }
     const found = data as LookupResult;
-    setLookup(found); setPayerEmail(found.payment_email || ''); setAuthStep('confirm');
+    setLookup(found); setAuthStep('confirm');
   }
 
   async function continueAfterConfirmation() {
     if (!lookup) return;
     setError(''); setNotice('');
     if (lookup.account_ready) { setAuthStep('password'); return; }
-    if (lookup.payment_verified) { setPayerEmail(lookup.payment_email || payerEmail); setAuthStep('setup'); return; }
+    if (lookup.payment_verified) { setAuthStep('setup'); return; }
     if (!lookup.session_available) { setError('The college has not opened a clearance session yet. No payment is due until the session is available.'); return; }
     if (lookup.payment_pending) {
       setNotice('A previous payment is still pending. Enter its Paystack reference below to verify it before attempting another payment.');
@@ -158,12 +161,13 @@ export default function StudentPortal() {
         return;
       }
       const found = refreshed as LookupResult;
-      setLookup(found); setPayerEmail(found.payment_email || '');
+      setLookup(found);
       setNotice('A verified payment already exists. Continue account setup; do not pay again.');
       setAuthStep(found.payment_verified && !found.account_ready ? 'setup' : found.account_ready ? 'password' : 'payment');
       return;
     }
     if (!data?.authorization_url) { setError('Paystack did not return a payment link. Please try again.'); return; }
+    window.sessionStorage.setItem('dscp-payment-email', payerEmail.trim().toLowerCase());
     window.location.assign(String(data.authorization_url));
   }
 
@@ -190,7 +194,7 @@ export default function StudentPortal() {
     }
     const found = record as LookupResult;
     setLookup(found); setRegistrationNumber(found.student.registration_number);
-    setPayerEmail(found.payment_email || ''); setAuthStep(found.account_ready ? 'password' : found.payment_verified ? 'setup' : 'payment');
+    setAuthStep(found.account_ready ? 'password' : found.payment_verified ? 'setup' : 'payment');
     setNotice(found.payment_verified ? 'Payment verified. Continue account setup; do not pay again.' : 'Payment status checked. Follow the next step below.');
   }
 
@@ -198,12 +202,17 @@ export default function StudentPortal() {
     event.preventDefault();
     if (!lookup) return;
     const email = payerEmail.trim().toLowerCase();
-    if (!email || !lookup.payment_email || email !== lookup.payment_email.toLowerCase()) {
-      setError('Use the same email address used for the successful Paystack payment.');
-      return;
-    }
+    if (!email) { setError('Enter the email address used for the successful Paystack payment.'); return; }
     if (password.length < 8) { setError('Choose a password with at least 8 characters.'); return; }
     setAuthBusy(true); setError(''); setNotice('');
+    const { data: emailCheck, error: emailCheckError } = await supabase.functions.invoke('student-portal', {
+      body: { action: 'validate_payment_email', payload: { registration_number: lookup.student.registration_number, email } },
+    });
+    if (emailCheckError || emailCheck?.error || !emailCheck?.valid) {
+      setAuthBusy(false);
+      setError(emailCheckError ? await describeFunctionError(emailCheckError, 'student-portal', 'Could not verify the payment email.') : String(emailCheck?.error || 'The email did not match the payment record.'));
+      return;
+    }
     const { data, error: signUpError } = await supabase.auth.signUp({
       email, password,
       options: {
