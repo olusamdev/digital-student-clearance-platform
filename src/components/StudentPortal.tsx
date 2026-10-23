@@ -21,6 +21,7 @@ export default function StudentPortal() {
   const [authStep, setAuthStep] = useState<'registration' | 'confirm' | 'password' | 'payment' | 'setup'>('registration');
   const [password, setPassword] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState('');
@@ -73,6 +74,7 @@ export default function StudentPortal() {
     const params = new URLSearchParams(window.location.search);
     const reference = params.get('reference') || params.get('trxref');
     if (!reference) return;
+    setPaymentReference(reference);
     window.history.replaceState({}, '', window.location.pathname);
     let cancelled = false;
     void (async () => {
@@ -124,7 +126,10 @@ export default function StudentPortal() {
     if (lookup.account_ready) { setAuthStep('password'); return; }
     if (lookup.payment_verified) { setPayerEmail(lookup.payment_email || payerEmail); setAuthStep('setup'); return; }
     if (!lookup.session_available) { setError('The college has not opened a clearance session yet. No payment is due until the session is available.'); return; }
-    if (lookup.payment_pending) { setError('A previous payment is still being reconciled. Retry from your payment reference or contact the college before paying again.'); return; }
+    if (lookup.payment_pending) {
+      setNotice('A previous payment is still pending. Enter its Paystack reference below to verify it before attempting another payment.');
+      setAuthStep('payment'); return;
+    }
     setAuthStep('payment');
   }
 
@@ -147,6 +152,33 @@ export default function StudentPortal() {
     }
     if (!data?.authorization_url) { setError('Paystack did not return a payment link. Please try again.'); return; }
     window.location.assign(String(data.authorization_url));
+  }
+
+  async function verifyPaymentReference() {
+    const reference = paymentReference.trim();
+    if (!reference) { setError('Enter the Paystack reference from your payment page or receipt.'); return; }
+    setAuthBusy(true); setError(''); setNotice('Checking the existing payment reference…');
+    const { data, error: verifyError } = await supabase.functions.invoke('student-payments', {
+      body: { action: 'verify', payload: { reference } },
+    });
+    setAuthBusy(false);
+    if (verifyError || data?.error || !data?.registration_number) {
+      setNotice('');
+      setError(verifyError ? await describeFunctionError(verifyError, 'student-payments', 'Could not verify the existing payment.') : String(data?.error || 'Payment could not be verified.'));
+      return;
+    }
+    const { data: record, error: lookupError } = await supabase.functions.invoke('student-portal', {
+      body: { action: 'lookup_record', payload: { registration_number: data.registration_number } },
+    });
+    if (lookupError || record?.error) {
+      setNotice('');
+      setError(lookupError ? await describeFunctionError(lookupError, 'student-portal', 'Payment was verified, but the student record could not be reloaded.') : String(record.error));
+      return;
+    }
+    const found = record as LookupResult;
+    setLookup(found); setRegistrationNumber(found.student.registration_number);
+    setPayerEmail(found.payment_email || ''); setAuthStep(found.account_ready ? 'password' : found.payment_verified ? 'setup' : 'payment');
+    setNotice(found.payment_verified ? 'Payment verified. Continue account setup; do not pay again.' : 'Payment status checked. Follow the next step below.');
   }
 
   async function createStudentAccount(event: FormEvent<HTMLFormElement>) {
@@ -241,7 +273,7 @@ export default function StudentPortal() {
         {authStep === 'registration' && <><label htmlFor="student-registration">Registration number</label><input id="student-registration" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)} maxLength={100} required autoComplete="off" placeholder="Your official registration number" /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Checking record…' : 'Continue'}<span aria-hidden="true">→</span></button></>}
         {authStep === 'confirm' && lookup && <><div className="panel"><p className="muted">Registered name</p><h2>{lookup.student.full_name}</h2><p className="clearance-reg">{lookup.student.registration_number}</p><p>Hello, are you {lookup.student.full_name}?</p></div><button className="primary-button" type="submit">Yes, that's me <span aria-hidden="true">→</span></button><button className="secondary-button" type="button" onClick={() => { setLookup(null); setRegistrationNumber(''); setAuthStep('registration'); setError(''); }}>No, enter the correct registration number</button></>}
         {authStep === 'password' && <><label htmlFor="student-password">Password</label><input id="student-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Signing in…' : 'Sign in'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => void requestPasswordReset()} disabled={authBusy}>Forgot password?</button></>}
-        {authStep === 'payment' && lookup && <><div className="panel"><p className="muted">Student</p><h3>{lookup.student.full_name}</h3><p className="clearance-reg">{lookup.student.registration_number}</p><h2>₦{(lookup.clearance_fee_kobo / 100).toLocaleString('en-NG')}</h2></div><label htmlFor="student-payment-email">Email for payment receipt and account verification</label><input id="student-payment-email" type="email" value={payerEmail} onChange={(e) => setPayerEmail(e.target.value)} maxLength={254} autoComplete="email" required placeholder="you@example.com" /><p className="field-note">Use an email account you can access. You must verify this email to create your student account. The account email must match the email used for payment.</p><button className="primary-button" type="submit" disabled={authBusy || !lookup.session_available}>{authBusy ? 'Connecting to Paystack…' : 'Pay clearance fee'}<span aria-hidden="true">→</span></button></>}
+        {authStep === 'payment' && lookup && <><div className="panel"><p className="muted">Student</p><h3>{lookup.student.full_name}</h3><p className="clearance-reg">{lookup.student.registration_number}</p><h2>₦{(lookup.clearance_fee_kobo / 100).toLocaleString('en-NG')}</h2></div>{lookup.payment_pending && <><p className="field-note">A previous payment is still being reconciled. Verify its reference before starting another payment.</p><label htmlFor="student-payment-reference">Existing Paystack reference</label><input id="student-payment-reference" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} maxLength={200} autoComplete="off" placeholder="DSCP-…" /><button className="secondary-button" type="button" disabled={authBusy || !paymentReference.trim()} onClick={() => void verifyPaymentReference()}>{authBusy ? 'Verifying…' : 'Verify previous payment'}</button></>}{!lookup.payment_pending && <><label htmlFor="student-payment-email">Email for payment receipt and account verification</label><input id="student-payment-email" type="email" value={payerEmail} onChange={(e) => setPayerEmail(e.target.value)} maxLength={254} autoComplete="email" required placeholder="you@example.com" /><p className="field-note">Use an email account you can access. You must verify this email to create your student account. The account email must match the email used for payment.</p><button className="primary-button" type="submit" disabled={authBusy || !lookup.session_available}>{authBusy ? 'Connecting to Paystack…' : 'Pay clearance fee'}<span aria-hidden="true">→</span></button></>}</>}
         {authStep === 'setup' && <><div className="panel"><p className="muted">Verified payment</p><h3>{lookup?.student.full_name}</h3><p className="clearance-reg">{lookup?.student.registration_number}</p><h2>₦{((lookup?.clearance_fee_kobo || 0) / 100).toLocaleString('en-NG')}</h2></div><p className="field-note">Payment is verified. Use the same email address that was used for the payment receipt. Verify your email before your student record is linked. Do not pay again.</p><label htmlFor="student-account-email">Email address</label><input id="student-account-email" type="email" value={payerEmail} onChange={(e) => setPayerEmail(e.target.value)} maxLength={254} required autoComplete="email" /><label htmlFor="student-new-password">Create password</label><input id="student-new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Creating account…' : 'Create student account'}<span aria-hidden="true">→</span></button></>}
         {authStep !== 'registration' && <button className="text-button" type="button" onClick={() => { setAuthStep('registration'); setLookup(null); setRegistrationNumber(''); setPassword(''); setError(''); setNotice(''); }}>Use another registration number</button>}
       </form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section>
