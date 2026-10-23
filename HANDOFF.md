@@ -102,7 +102,7 @@ Draft PR: https://github.com/olusamdev/digital-student-clearance-platform/pull/1
 - Do not deploy the updated `student-portal` Edge Function before deploying the matching frontend; the existing live UI still uses the old phone-claim action.
 - Do not deploy `student-payments` until the secret `PAYSTACK_SECRET_KEY` is set in the correct Supabase project's Edge Function secrets.
 - Verify production Auth email confirmations are enabled and `https://dscp.olusamdev.workers.dev/student` is allow-listed for email confirmation/reset redirects. The code rejects account linking until Auth reports the email as confirmed.
-- GitHub Actions has not returned a build run; no successful build/test claim can be made yet.
+- GitHub Actions passed on code commit `f858e96d622797232b7bc3e0ccae2b611d6f07f0`: `npm ci`, `npm run build`, and `deno check` for both student Edge Functions succeeded. Re-run CI after any further code changes.
 - Live DB currently has no imported student records, no active clearance session, and no enabled required clearance requirements. A controlled student/session test fixture is needed.
 - Payment-email matching verifies access to the receipt email, not legal identity by itself. The college must approve this as the onboarding check or provide a stronger identity-verification step before broad public launch.
 
