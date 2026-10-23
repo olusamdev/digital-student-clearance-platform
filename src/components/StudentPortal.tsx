@@ -146,9 +146,18 @@ export default function StudentPortal() {
       return;
     }
     if (data?.already_paid) {
-      setNotice('A verified payment already exists. Continue account setup.');
-      setLookup({ ...lookup, payment_verified: true, payment_email: payerEmail.trim().toLowerCase() });
-      setAuthStep('setup'); return;
+      const { data: refreshed, error: refreshError } = await supabase.functions.invoke('student-portal', {
+        body: { action: 'lookup_record', payload: { registration_number: lookup.student.registration_number } },
+      });
+      if (refreshError || refreshed?.error) {
+        setError('A previous payment exists, but its receipt email could not be checked. Return to the registration lookup and retry; do not pay again.');
+        return;
+      }
+      const found = refreshed as LookupResult;
+      setLookup(found); setPayerEmail(found.payment_email || '');
+      setNotice('A verified payment already exists. Continue account setup; do not pay again.');
+      setAuthStep(found.payment_verified && !found.account_ready ? 'setup' : found.account_ready ? 'password' : 'payment');
+      return;
     }
     if (!data?.authorization_url) { setError('Paystack did not return a payment link. Please try again.'); return; }
     window.location.assign(String(data.authorization_url));
