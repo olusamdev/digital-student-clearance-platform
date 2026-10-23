@@ -25,14 +25,14 @@ async function applyVerifiedPayment(admin: any, reference: string, secret: strin
   const verifiedPayerEmail = text(transaction.customer?.email, 254).toLowerCase();
   if (!row.payer_email || !verifiedPayerEmail || verifiedPayerEmail !== String(row.payer_email).toLowerCase()) {
     await admin.from("payment_transactions").update({
-      status: "failed", failure_reason: "Verified payer email mismatch",
+      status: "pending", failure_reason: "Verified payer email mismatch",
       provider_payload: { status: transaction.status, customer_email: verifiedPayerEmail || null },
       updated_at: new Date().toISOString(),
     }).eq("id", row.id);
     return { error: "The email confirmed by Paystack did not match the checkout email. Contact the college before attempting another payment.", status: 409 };
   }
   if (Number(transaction.amount) !== Number(row.amount_kobo) || String(transaction.currency).toUpperCase() !== row.currency) {
-    await admin.from("payment_transactions").update({ status: "failed", failure_reason: "Verified amount or currency mismatch", provider_payload: { status: transaction.status, amount: transaction.amount, currency: transaction.currency }, updated_at: new Date().toISOString() }).eq("id", row.id);
+    await admin.from("payment_transactions").update({ status: "pending", failure_reason: "Verified amount or currency mismatch", provider_payload: { status: transaction.status, amount: transaction.amount, currency: transaction.currency }, updated_at: new Date().toISOString() }).eq("id", row.id);
     return { error: "Payment amount or currency did not match the expected clearance fee. Contact the college with the reference.", status: 409 };
   }
   const now = new Date().toISOString();
