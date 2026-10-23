@@ -419,3 +419,7 @@ verify_jwt = false
 
 [functions.student-payments]
 verify_jwt = false
+
+# Public activation/reset-code redemption is protected inside the function; staff actions validate JWT and role.
+[functions.manage-student-access]
+verify_jwt = false
