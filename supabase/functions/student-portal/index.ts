@@ -63,14 +63,15 @@ Deno.serve(async (req) => {
           (!item.closes_at || new Date(item.closes_at).getTime() >= now);
       }) ?? null;
       const { data: studentSessions, error: studentSessionsError } = await admin.from("session_students")
-        .select("id,payment_unlocked_at").eq("student_id", candidate.id);
+        .select("id,session_id,payment_unlocked_at").eq("student_id", candidate.id);
       if (studentSessionsError) return json({ error: "Could not check your payment status. Please try again." }, 500, origin);
       const links = studentSessions ?? [];
-      const paymentVerified = links.some((link) => Boolean(link.payment_unlocked_at));
+      const activeLinks = activeSession ? links.filter((link) => link.session_id === activeSession.id) : [];
+      const paymentVerified = activeLinks.some((link) => Boolean(link.payment_unlocked_at));
       let paymentPending = false;
-      if (links.length) {
+      if (activeLinks.length) {
         const { data: transactions, error: transactionError } = await admin.from("payment_transactions")
-          .select("status,created_at").in("session_student_id", links.map((link) => link.id))
+          .select("status,created_at").in("session_student_id", activeLinks.map((link) => link.id))
           .order("created_at", { ascending: false }).limit(10);
         if (transactionError) return json({ error: "Could not check your payment status. Please try again." }, 500, origin);
         paymentPending = !paymentVerified && (transactions ?? []).some((item) => ["pending", "initiated", "successful"].includes(item.status));
