@@ -77,7 +77,7 @@ Deno.serve(async req => {
         }).eq("id", student.id).is("auth_user_id", null).select("id").maybeSingle();
         if (linkError || !linked) return respond({ error: "Could not link the account safely. Contact the college." }, 409, origin);
         await db.from("audit_events").insert({ actor_student_id: student.id, event_type: "student.account_activated", entity_type: "student_record", entity_id: student.id, details: { registration_number: student.registration_number } });
-        return respond({ success: true, activated: true }, 200, origin);
+        return respond({ success: true, activated: true, auth_email: email }, 200, origin);
       }
       const { error: passwordError } = await db.auth.admin.updateUserById(student.auth_user_id, { password });
       if (passwordError) return respond({ error: "Password reset failed. Ask the college to issue a new code." }, 500, origin);
