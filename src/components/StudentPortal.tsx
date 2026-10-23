@@ -22,6 +22,9 @@ export default function StudentPortal() {
   const [password, setPassword] = useState('');
   const [payerEmail, setPayerEmail] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState('');
@@ -59,7 +62,8 @@ export default function StudentPortal() {
   }, []);
 
   useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
       setSession(nextSession);
       if (!nextSession) setDashboard(null);
     });
@@ -239,6 +243,19 @@ export default function StudentPortal() {
     else setNotice('If a recovery email is configured, a password-reset link has been sent.');
   }
 
+  async function saveNewPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newPassword.length < 8) { setError('Choose a password with at least 8 characters.'); return; }
+    if (newPassword !== confirmNewPassword) { setError('The passwords do not match.'); return; }
+    setAuthBusy(true); setError(''); setNotice('');
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+    setAuthBusy(false);
+    if (updateError) { setError('The password could not be updated. Reopen the latest password-reset link and try again.'); return; }
+    setRecoveryMode(false); setNewPassword(''); setConfirmNewPassword('');
+    setNotice('Your password has been updated.');
+    await loadDashboard();
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
     setSession(null); setDashboard(null); setRegistrationNumber(''); setLookup(null); setAuthStep('registration'); setPassword(''); setNotice('You have signed out.');
@@ -286,6 +303,13 @@ export default function StudentPortal() {
         {authStep === 'setup' && <><div className="panel"><p className="muted">Verified payment</p><h3>{lookup?.student.full_name}</h3><p className="clearance-reg">{lookup?.student.registration_number}</p><h2>₦{((lookup?.clearance_fee_kobo || 0) / 100).toLocaleString('en-NG')}</h2></div><p className="field-note">Payment is verified. Use the same email address that was used for the payment receipt. Verify your email before your student record is linked. Do not pay again.</p><label htmlFor="student-account-email">Email address</label><input id="student-account-email" type="email" value={payerEmail} onChange={(e) => setPayerEmail(e.target.value)} maxLength={254} required autoComplete="email" /><label htmlFor="student-new-password">Create password</label><input id="student-new-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Creating account…' : 'Create student account'}<span aria-hidden="true">→</span></button></>}
         {authStep !== 'registration' && <button className="text-button" type="button" onClick={() => { setAuthStep('registration'); setLookup(null); setRegistrationNumber(''); setPassword(''); setError(''); setNotice(''); }}>Use another registration number</button>}
       </form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section>
+    </main>
+  );
+
+  if (recoveryMode && session) return (
+    <main className="auth-layout">
+      <section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Secure your account.</h1><p>Choose a new password to regain access to your student clearance.</p></div></section>
+      <section className="form-panel"><form className="login-card" onSubmit={saveNewPassword}><p className="eyebrow dark">PASSWORD RECOVERY</p><h2>Set a new password</h2><p className="muted">Use at least 8 characters and keep it private.</p>{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="student-reset-password">New password</label><input id="student-reset-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><label htmlFor="student-reset-confirm">Confirm new password</label><input id="student-reset-confirm" type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} minLength={8} maxLength={128} autoComplete="new-password" required /><button className="primary-button" type="submit" disabled={authBusy}>{authBusy ? 'Updating password…' : 'Update password'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => void signOut()}>Cancel and sign out</button></form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section>
     </main>
   );
 
