@@ -113,3 +113,23 @@ Draft PR: https://github.com/olusamdev/digital-student-clearance-platform/pull/1
 4. Test payment success, failed/cancelled payment, callback interruption, duplicate-charge prevention, email verification, account linking, password sign-in/reset, and staff-account exclusion.
 5. Deploy `student-portal` and `student-payments` to `cipsazscgpyoaxwukmaw`, then deploy the frontend only after all tests pass.
 6. Verify the live student flow and existing staff portals. Do not merge/deploy early; do not run further migrations unless needed and authorized.
+
+
+## Latest update — 2026-10-23: no-email student access and assisted payment
+
+This section supersedes the earlier email-based student onboarding notes above for the feature branch. The live site and deployed Edge Functions have **not** been changed by this work.
+
+- Added feature-branch migration `20261023120000_student_activation_and_assisted_payment.sql` for hashed, single-use, 30-minute activation/reset codes and audit fields for staff-assisted payments. **Not applied remotely.**
+- Added `manage-student-access` Edge Function source. Active Administrator/SuperAdmin roles can issue activation or reset codes; only SuperAdmin can change the student WhatsApp support number. Code redemption creates the student Auth identity or changes the password server-side. Raw codes are returned once to the issuing staff UI; only hashes are stored.
+- First-time activation is blocked server-side until a successful payment is linked to the currently open clearance session. Students enter registration number, then a paid/unactivated record routes directly to activation/password setup. A single-use college-issued activation code is required; the student chooses and keeps their own password.
+- Student passwords use deterministic internal Supabase Auth identifiers, not student email addresses. Student self-checkout uses the server secret `PAYSTACK_RECEIPT_EMAIL` for Paystack's required receipt email. Admin-assisted checkout uses the authenticated staff account email and stores the registration number plus initiating staff ID.
+- Added the Administrator dashboard tools in `src/components/StudentAccessTools.tsx`; SuperAdmin sees only WhatsApp support configuration, not the assisted-payment/account-code tools.
+- Student payment screen now has “Already paid? Contact support on WhatsApp”. The contact number is read from `app_settings.student_support_whatsapp` and can be changed by SuperAdmin after deployment.
+- Added `manage-student-access` to the CI Deno check.
+
+### Validation and remaining blockers
+- GitHub Actions frontend build passed on commit `8a38ebfa6425b6374cef4fa164e3df0fb371aae5`; the Deno check then failed because `https://esm.sh/@supabase/supabase-js@2` returned HTTP 521 while Deno was downloading the dependency. This was an upstream fetch failure, not a reported TypeScript diagnostic. Recheck CI on the latest branch head.
+- Do not deploy the new Edge Function or frontend, and do not apply the new migration, until CI passes and the payment/activation flows are reviewed together.
+- Before enabling student self-checkout, set `PAYSTACK_SECRET_KEY` and a college-controlled `PAYSTACK_RECEIPT_EMAIL` as Edge Function secrets in the DSCP project `cipsazscgpyoaxwukmaw`. Do not use the COHT CBT Supabase project.
+- Test in Paystack test mode with a dummy student and active clearance session: student-initiated payment; admin-assisted payment; webhook/callback verification; duplicate-payment prevention; paid student routing directly to activation; expired/reused activation code; invalid code; admin-issued password reset; support WhatsApp link; and staff-role denial for unauthorized callers.
+- No migration, Edge Function deployment, frontend deployment, PR merge, or production data import was performed in this update.
