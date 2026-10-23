@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
       for (const payment of paidRows ?? []) {
         const { data: paidSession } = await admin.from("session_students").select("student_id,payment_unlocked_at")
           .eq("id", payment.session_student_id).maybeSingle();
-        if (paidSession?.student_id === candidate.id && paidSession.payment_unlocked_at) { validPayment = true; break; }
+        if (paidSession && paidSession.student_id === candidate.id && paidSession.payment_unlocked_at) { validPayment = true; break; }
       }
       if (!validPayment) return json({ error: "Use the same verified email address that received the Paystack payment receipt for this registration number." }, 403, origin);
       const now = new Date().toISOString();
