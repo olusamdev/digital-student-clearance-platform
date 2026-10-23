@@ -53,13 +53,6 @@ Deno.serve(async req => {
       return respond({ success: true, whatsapp: str(data?.setting_value, 40) }, 200, origin);
     }
 
-    const auth = req.headers.get("Authorization");
-    if (!auth?.startsWith("Bearer ")) return respond({ error: "Authentication required" }, 401, origin);
-    const userClient = createClient(url, anon, { global: { headers: { Authorization: auth } }, auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: userData, error: userError } = await userClient.auth.getUser();
-    if (userError || !userData.user) return respond({ error: "Invalid session" }, 401, origin);
-    const actor = userData.user;
-
     if (action === "complete_activation" || action === "complete_password_reset") {
       const registrationNumber = reg(p.registration_number), suppliedCode = str(p.code, 40).toUpperCase().replace(/[^A-Z0-9]/g, "");
       const password = typeof p.password === "string" ? p.password : "";
@@ -104,6 +97,15 @@ Deno.serve(async req => {
       await db.from("audit_events").insert({ actor_student_id: student.id, event_type: "student.password_reset_completed", entity_type: "student_record", entity_id: student.id, details: { registration_number: student.registration_number } });
       return respond({ success: true, password_reset: true }, 200, origin);
     }
+
+    const auth = req.headers.get("Authorization");
+    if (!auth?.startsWith("Bearer ")) return respond({ error: "Authentication required" }, 401, origin);
+    const userClient = createClient(url, anon, { global: { headers: { Authorization: auth } }, auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: userData, error: userError } = await userClient.auth.getUser();
+    if (userError || !userData.user) return respond({ error: "Invalid session" }, 401, origin);
+    const actor = userData.user;
+
+
 
     const [{ data: profile, error: profileError }, { data: roles, error: rolesError }] = await Promise.all([
       db.from("staff_profiles").select("user_id,active").eq("user_id", actor.id).maybeSingle(),
