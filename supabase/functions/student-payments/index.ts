@@ -89,11 +89,31 @@ Deno.serve(async (req) => {
     const result = await applyVerifiedPayment(admin, reference, secret, origin);
     return result.error ? reply({ error: result.error }, result.status, origin) : reply(result, 200, origin);
   }
-  if (action !== "initiate") return reply({ error: "Unsupported payment action." }, 400, origin);
+  const adminInitiated = action === "initiate_admin";
+  if (action !== "initiate" && !adminInitiated) return reply({ error: "Unsupported payment action." }, 400, origin);
 
   const registrationNumber = text(payload.registration_number, 100).toUpperCase();
-  const email = text(payload.email, 254).toLowerCase();
-  if (!registrationNumber || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply({ error: "Enter your registration number and a valid email address for the payment receipt." }, 400, origin);
+  let email = text(payload.email, 254).toLowerCase();
+  let actorUserId: string | null = null;
+  if (adminInitiated) {
+    const authorization = req.headers.get("Authorization");
+    if (!authorization?.startsWith("Bearer ")) return reply({ error: "Administrator sign-in is required." }, 401, origin);
+    const anon = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!anon) return reply({ error: "Server configuration incomplete." }, 500, origin);
+    const userClient = createClient(url, anon, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: authData, error: authError } = await userClient.auth.getUser();
+    if (authError || !authData.user) return reply({ error: "Administrator session is invalid." }, 401, origin);
+    const [{ data: profile }, { data: roles }] = await Promise.all([
+      admin.from("staff_profiles").select("user_id,active").eq("user_id", authData.user.id).maybeSingle(),
+      admin.from("staff_role_assignments").select("role").eq("user_id", authData.user.id).eq("active", true).in("role", ["admin", "superadmin"]),
+    ]);
+    if (!profile?.active || !roles?.length) return reply({ error: "Only an active Administrator or SuperAdmin can pay for a student." }, 403, origin);
+    actorUserId = authData.user.id;
+    email = text(authData.user.email, 254).toLowerCase();
+  }
+  if (!registrationNumber || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return reply({ error: adminInitiated ? "The signed-in staff account needs a valid email for the Paystack receipt." : "Enter your registration number and a valid email address for the payment receipt." }, 400, origin);
+  }
   const { data: student, error: studentError } = await admin.from("student_records").select("id,registration_number,full_name,auth_user_id")
     .eq("registration_number", registrationNumber).maybeSingle();
   if (studentError || !student) return reply({ error: "No student record was found. Check the registration number." }, 404, origin);
@@ -138,9 +158,15 @@ Deno.serve(async (req) => {
   const { error: insertError } = await admin.from("payment_transactions").insert({
     session_student_id: link.id, provider: "paystack", provider_reference: reference, amount_kobo: amountKobo,
     currency: "NGN", status: "pending", registration_number_snapshot: student.registration_number, payer_email: email,
+    initiated_by_user_id: actorUserId, payment_mode: adminInitiated ? "admin_assisted" : "student_initiated",
     provider_payload: { access_code: initialized.data.access_code }, initiated_at: new Date().toISOString(),
   });
   if (insertError) return reply({ error: "Payment was initialized but could not be safely recorded. Contact the college before retrying." }, 500, origin);
-  await admin.from("audit_events").insert({ actor_student_id: student.id, event_type: "student.payment_initiated", entity_type: "payment_transaction", entity_id: reference, details: { registration_number: student.registration_number, amount_kobo: amountKobo } });
+  await admin.from("audit_events").insert({
+    actor_student_id: adminInitiated ? null : student.id,
+    event_type: adminInitiated ? "admin.student_payment_initiated" : "student.payment_initiated",
+    entity_type: "payment_transaction", entity_id: reference,
+    details: { registration_number: student.registration_number, amount_kobo: amountKobo, initiated_by: actorUserId, payment_mode: adminInitiated ? "admin_assisted" : "student_initiated" },
+  });
   return reply({ success: true, authorization_url: initialized.data.authorization_url, reference, registration_number: student.registration_number }, 200, origin);
 });
