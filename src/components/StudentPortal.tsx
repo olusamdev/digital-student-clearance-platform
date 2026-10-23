@@ -258,7 +258,7 @@ export default function StudentPortal() {
 
   async function signOut() {
     await supabase.auth.signOut();
-    setSession(null); setDashboard(null); setRegistrationNumber(''); setLookup(null); setAuthStep('registration'); setPassword(''); setNotice('You have signed out.');
+    setSession(null); setDashboard(null); setRegistrationNumber(''); setLookup(null); setAuthStep('registration'); setPassword(''); setRecoveryMode(false); setNewPassword(''); setConfirmNewPassword(''); setNotice('You have signed out.');
   }
 
   async function invokeStudent(action: string, payload: Record<string, unknown> = {}) {
