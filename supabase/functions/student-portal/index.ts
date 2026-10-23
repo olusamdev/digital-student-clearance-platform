@@ -61,20 +61,21 @@ Deno.serve(async (req) => {
         const now = Date.now();
         return (!item.opens_at || new Date(item.opens_at).getTime() <= now) &&
           (!item.closes_at || new Date(item.closes_at).getTime() >= now);
-      }) ?? (activeSessions ?? [])[0] ?? null;
-      let paymentVerified = false;
+      }) ?? null;
+      const { data: studentSessions, error: studentSessionsError } = await admin.from("session_students")
+        .select("id,payment_unlocked_at").eq("student_id", candidate.id);
+      if (studentSessionsError) return json({ error: "Could not check your payment status. Please try again." }, 500, origin);
+      const links = studentSessions ?? [];
+      const paymentVerified = links.some((link) => Boolean(link.payment_unlocked_at));
       let paymentPending = false;
       let paymentEmail: string | null = null;
-      if (activeSession) {
-        const { data: link } = await admin.from("session_students").select("id,payment_unlocked_at")
-          .eq("session_id", activeSession.id).eq("student_id", candidate.id).maybeSingle();
-        if (link) {
-          paymentVerified = Boolean(link.payment_unlocked_at);
-          const { data: transactions } = await admin.from("payment_transactions").select("status,payer_email")
-            .eq("session_student_id", link.id).order("created_at", { ascending: false }).limit(5);
-          paymentPending = !paymentVerified && (transactions ?? []).some((item) => ["pending", "initiated"].includes(item.status));
-          paymentEmail = (transactions ?? []).find((item) => item.status === "successful" && item.payer_email)?.payer_email ?? null;
-        }
+      if (links.length) {
+        const { data: transactions, error: transactionError } = await admin.from("payment_transactions")
+          .select("status,payer_email,created_at").in("session_student_id", links.map((link) => link.id))
+          .order("created_at", { ascending: false }).limit(10);
+        if (transactionError) return json({ error: "Could not check your payment status. Please try again." }, 500, origin);
+        paymentPending = !paymentVerified && (transactions ?? []).some((item) => ["pending", "initiated"].includes(item.status));
+        paymentEmail = (transactions ?? []).find((item) => item.status === "successful" && item.payer_email)?.payer_email ?? null;
       }
       return json({
         success: true,
