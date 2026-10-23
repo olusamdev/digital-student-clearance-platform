@@ -17,7 +17,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS student_records_auth_email_key
   WHERE auth_email IS NOT NULL;
 
 ALTER TABLE public.payment_transactions
-  ADD COLUMN IF NOT EXISTS registration_number_snapshot text;
+  ADD COLUMN IF NOT EXISTS registration_number_snapshot text,
+  ADD COLUMN IF NOT EXISTS payer_email text;
 
 UPDATE public.payment_transactions pt
 SET registration_number_snapshot = sr.registration_number
