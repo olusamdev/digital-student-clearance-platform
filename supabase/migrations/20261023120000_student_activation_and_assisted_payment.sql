@@ -33,3 +33,6 @@ COMMENT ON TABLE public.student_access_tokens IS
   'Hashed, single-use, expiring codes for student activation and administrator-assisted password recovery. Raw codes are never stored.';
 COMMENT ON COLUMN public.payment_transactions.initiated_by_user_id IS
   'Authenticated staff member who initiated an administrator-assisted Paystack payment.';
+
+COMMENT ON COLUMN public.student_records.auth_email IS
+  'Internal Supabase Auth sign-in identifier; for students this is a deterministic synthetic identifier, not a student contact email.';
