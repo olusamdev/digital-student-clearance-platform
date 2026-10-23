@@ -107,7 +107,7 @@ export default function StudentPortal() {
         return;
       }
       const found = record as LookupResult;
-      setLookup(found); setPayerEmail(found.payment_email || '');
+      setLookup(found);
       setAuthStep(found.account_ready ? 'password' : found.payment_verified ? 'setup' : 'payment');
       setNotice(found.payment_verified ? 'Payment verified. Continue setting up your student account; do not pay again.' : 'Payment reference checked. Follow the next step shown below.');
     })();
