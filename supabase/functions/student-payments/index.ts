@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
   if (!paystackResponse.ok || initialized?.status !== true || !initialized?.data?.authorization_url) return reply({ error: "Paystack could not start payment. Please try again." }, 502, origin);
   const { error: insertError } = await admin.from("payment_transactions").insert({
     session_student_id: link.id, provider: "paystack", provider_reference: reference, amount_kobo: amountKobo,
-    currency: "NGN", status: "pending", registration_number_snapshot: student.registration_number,
+    currency: "NGN", status: "pending", registration_number_snapshot: student.registration_number, payer_email: email,
     provider_payload: { access_code: initialized.data.access_code }, initiated_at: new Date().toISOString(),
   });
   if (insertError) return reply({ error: "Payment was initialized but could not be safely recorded. Contact the college before retrying." }, 500, origin);
