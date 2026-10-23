@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
   if (link.payment_unlocked_at) return reply({ success: true, already_paid: true, registration_number: student.registration_number }, 200, origin);
 
   const { data: prior } = await admin.from("payment_transactions").select("id,status,provider_reference")
-    .eq("session_student_id", link.id).eq("provider", "paystack").in("status", ["initiated", "pending"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    .eq("session_student_id", link.id).eq("provider", "paystack").in("status", ["initiated", "pending", "successful"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (prior) {
     const verified = await applyVerifiedPayment(admin, prior.provider_reference, secret, origin);
     if (!verified.error) return reply({ success: true, already_paid: true, registration_number: student.registration_number }, 200, origin);
