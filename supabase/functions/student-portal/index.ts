@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
           .select("status,payer_email,created_at").in("session_student_id", links.map((link) => link.id))
           .order("created_at", { ascending: false }).limit(10);
         if (transactionError) return json({ error: "Could not check your payment status. Please try again." }, 500, origin);
-        paymentPending = !paymentVerified && (transactions ?? []).some((item) => ["pending", "initiated"].includes(item.status));
+        paymentPending = !paymentVerified && (transactions ?? []).some((item) => ["pending", "initiated", "successful"].includes(item.status));
         paymentEmail = (transactions ?? []).find((item) => item.status === "successful" && item.payer_email)?.payer_email ?? null;
       }
       return json({
