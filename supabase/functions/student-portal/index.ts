@@ -78,6 +78,7 @@ Deno.serve(async (req) => {
         success: true,
         student: { registration_number: candidate.registration_number, full_name: candidate.full_name },
         account_ready: Boolean(candidate.auth_user_id && candidate.auth_email),
+        auth_email: candidate.auth_user_id && candidate.auth_email ? candidate.auth_email : null,
         payment_verified: paymentVerified,
         payment_pending: paymentPending,
         clearance_fee_kobo: Number.isFinite(feeValue) && feeValue > 0 ? feeValue : 170000,
