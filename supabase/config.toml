@@ -416,3 +416,6 @@ enabled = true
 [functions.process-clearance-reminders]
 verify_jwt = false
 
+
+[functions.student-payments]
+verify_jwt = false
