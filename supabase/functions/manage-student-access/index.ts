@@ -53,6 +53,11 @@ Deno.serve(async req => {
       if (studentError) return respond({ error: "Could not verify the student record." }, 500, origin);
       if (!student) return respond({ error: "Student record not found." }, 404, origin);
       const purpose = action === "complete_activation" ? "activation" : "password_reset";
+      if (purpose === "activation") {
+        const { data: paidLink, error: paidError } = await db.from("session_students").select("id").eq("student_id", student.id).not("payment_unlocked_at", "is", null).limit(1).maybeSingle();
+        if (paidError) return respond({ error: "Could not verify the clearance payment." }, 500, origin);
+        if (!paidLink) return respond({ error: "A verified clearance payment is required before account activation." }, 402, origin);
+      }
       if (purpose === "activation" && student.auth_user_id) return respond({ error: "This account is already activated. Contact an administrator if you cannot sign in." }, 409, origin);
       if (purpose === "password_reset" && !student.auth_user_id) return respond({ error: "This account has not been activated." }, 409, origin);
       const tokenHash = await hash(purpose + ":" + student.id + ":" + suppliedCode);
@@ -110,6 +115,11 @@ Deno.serve(async req => {
       if (studentError) return respond({ error: "Could not check the student record." }, 500, origin);
       if (!student) return respond({ error: "Student record not found." }, 404, origin);
       const purpose = action === "issue_activation" ? "activation" : "password_reset";
+      if (purpose === "activation") {
+        const { data: paidLink, error: paidError } = await db.from("session_students").select("id").eq("student_id", student.id).not("payment_unlocked_at", "is", null).limit(1).maybeSingle();
+        if (paidError) return respond({ error: "Could not verify the clearance payment." }, 500, origin);
+        if (!paidLink) return respond({ error: "A verified clearance payment is required before an activation code can be issued." }, 402, origin);
+      }
       if (purpose === "activation" && student.auth_user_id) return respond({ error: "This account is already activated." }, 409, origin);
       if (purpose === "password_reset" && !student.auth_user_id) return respond({ error: "This account has not been activated." }, 409, origin);
       await db.from("student_access_tokens").update({ consumed_at: new Date().toISOString() }).eq("student_id", student.id).eq("purpose", purpose).is("consumed_at", null);
