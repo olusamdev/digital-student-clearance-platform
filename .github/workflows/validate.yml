@@ -20,3 +20,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno check --no-lock supabase/functions/student-portal/index.ts supabase/functions/student-payments/index.ts
