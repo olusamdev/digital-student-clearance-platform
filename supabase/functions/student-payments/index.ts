@@ -8,7 +8,7 @@ const text = (v: unknown, max = 200) => typeof v === "string" ? v.trim().slice(0
 
 async function applyVerifiedPayment(admin: any, reference: string, secret: string, origin: string) {
   const { data: row, error: rowError } = await admin.from("payment_transactions")
-    .select("id,session_student_id,registration_number_snapshot,amount_kobo,currency,status")
+    .select("id,session_student_id,registration_number_snapshot,payer_email,amount_kobo,currency,status")
     .eq("provider_reference", reference).eq("provider", "paystack").maybeSingle();
   if (rowError || !row) return { error: "Payment reference was not found.", status: 404 };
   const response = await fetch("https://api.paystack.co/transaction/verify/" + encodeURIComponent(reference), {
@@ -21,6 +21,15 @@ async function applyVerifiedPayment(admin: any, reference: string, secret: strin
       await admin.from("payment_transactions").update({ status: "pending", updated_at: new Date().toISOString() }).eq("id", row.id);
     }
     return { error: "Paystack has not confirmed a successful payment yet. Retry verification shortly.", status: 409 };
+  }
+  const verifiedPayerEmail = text(transaction.customer?.email, 254).toLowerCase();
+  if (!row.payer_email || !verifiedPayerEmail || verifiedPayerEmail !== String(row.payer_email).toLowerCase()) {
+    await admin.from("payment_transactions").update({
+      status: "failed", failure_reason: "Verified payer email mismatch",
+      provider_payload: { status: transaction.status, customer_email: verifiedPayerEmail || null },
+      updated_at: new Date().toISOString(),
+    }).eq("id", row.id);
+    return { error: "The email confirmed by Paystack did not match the checkout email. Contact the college before attempting another payment.", status: 409 };
   }
   if (Number(transaction.amount) !== Number(row.amount_kobo) || String(transaction.currency).toUpperCase() !== row.currency) {
     await admin.from("payment_transactions").update({ status: "failed", failure_reason: "Verified amount or currency mismatch", provider_payload: { status: transaction.status, amount: transaction.amount, currency: transaction.currency }, updated_at: new Date().toISOString() }).eq("id", row.id);
