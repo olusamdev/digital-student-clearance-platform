@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
   if (action !== "initiate" && !adminInitiated) return reply({ error: "Unsupported payment action." }, 400, origin);
 
   const registrationNumber = text(payload.registration_number, 100).toUpperCase();
-  let email = text(payload.email, 254).toLowerCase();
+  let email = "";
   let actorUserId: string | null = null;
   if (adminInitiated) {
     const authorization = req.headers.get("Authorization");
@@ -110,9 +110,15 @@ Deno.serve(async (req) => {
     if (!profile?.active || !roles?.length) return reply({ error: "Only an active Administrator or SuperAdmin can pay for a student." }, 403, origin);
     actorUserId = authData.user.id;
     email = text(authData.user.email, 254).toLowerCase();
+  } else {
+    // Students do not need personal email accounts. Use the college-controlled Paystack receipt address.
+    email = text(Deno.env.get("PAYSTACK_RECEIPT_EMAIL"), 254).toLowerCase();
   }
-  if (!registrationNumber || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return reply({ error: adminInitiated ? "The signed-in staff account needs a valid email for the Paystack receipt." : "Enter your registration number and a valid email address for the payment receipt." }, 400, origin);
+  if (!registrationNumber) return reply({ error: "Enter the student's registration number." }, 400, origin);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return reply({ error: adminInitiated
+      ? "The signed-in staff account needs a valid email for the Paystack receipt."
+      : "Student payments are not configured yet. Contact the college or ask an administrator to assist with payment." }, adminInitiated ? 400 : 503, origin);
   }
   const { data: student, error: studentError } = await admin.from("student_records").select("id,registration_number,full_name,auth_user_id")
     .eq("registration_number", registrationNumber).maybeSingle();
