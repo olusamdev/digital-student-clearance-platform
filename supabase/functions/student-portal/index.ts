@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { corsHeaders, isAllowedOrigin, rejectOrigin } from "./_shared/cors.ts";
+import { corsHeaders, isAllowedOrigin, rejectOrigin } from "../_shared/cors.ts";
 
 type Json = Record<string, unknown>;
 const json = (body: unknown, status = 200, origin = "") => new Response(JSON.stringify(body), {
@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
       for (const payment of paidRows ?? []) {
         const { data: paidSession } = await admin.from("session_students").select("student_id,payment_unlocked_at")
           .eq("id", payment.session_student_id).maybeSingle();
-        if (paidSession?.student_id === candidate.id && paidSession.payment_unlocked_at) {
+        if (paidSession && paidSession.student_id === candidate.id && paidSession.payment_unlocked_at) {
           return json({ success: true, valid: true }, 200, origin);
         }
       }
