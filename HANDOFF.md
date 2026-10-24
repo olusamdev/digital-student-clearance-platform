@@ -83,3 +83,53 @@ Therefore, student dashboard and Provost queue cannot be tested end-to-end until
 - Updated `src/components/StudentImport.tsx`, `src/components/StudentPortal.tsx`, `supabase/functions/import-students/index.ts`, and `supabase/functions/student-portal/index.ts` in GitHub main. Student portal Edge Function redeployed with JWT verification enabled. No student records imported and no live data changed by this code edit.
 - Important limitation: the claim process currently matches the official name and registration number and verifies phone ownership by SMS. This is not equivalent to an independent identity document check; monitor first-time claims and provide a college correction/recovery process.
 - Next: when network connectivity to GitHub returns, pull main locally, run `npm run build`, deploy the frontend with `npx wrangler deploy`, then test using one dummy student row. Verify the template headers are exactly `name,registration_number`, validate/import one test record, claim it using a test phone, and complete the student profile. Do not import the full register until the end-to-end test passes.
+
+
+## Current handoff — 2026-10-23: student password/payment flow
+
+Work branch: `feature/student-password-payment-flow`  
+Draft PR: https://github.com/olusamdev/digital-student-clearance-platform/pull/1
+
+### Completed
+- Applied additive migration `20261023064959_student_password_accounts.sql` to DSCP Supabase project `cipsazscgpyoaxwukmaw` (NOT the COHT CBT project).
+- Added student Auth-link fields and durable payment registration/email audit fields.
+- Added `student-payments` Edge Function source for Paystack initiation, verification and signed webhook reconciliation.
+- Connected the student UI to registration lookup, checkout redirect, callback verification, recovery by existing Paystack reference, and password account setup.
+- Added server-side account linking: requires a confirmed Auth email matching a successful payment's payer email; prevents overwriting an already-linked student record.
+- Added `verify_jwt = false` for the webhook/payment function in local Supabase config. When deployed, the function must be deployed with JWT verification disabled because webhook requests are authenticated by Paystack HMAC; browser actions still enforce origin checks and use unpredictable references.
+
+### Not yet deployed or tested
+- Do not deploy the updated `student-portal` Edge Function before deploying the matching frontend; the existing live UI still uses the old phone-claim action.
+- Do not deploy `student-payments` until the secret `PAYSTACK_SECRET_KEY` is set in the correct Supabase project's Edge Function secrets.
+- Verify production Auth email confirmations are enabled and `https://dscp.olusamdev.workers.dev/student` is allow-listed for email confirmation/reset redirects. The code rejects account linking until Auth reports the email as confirmed.
+- GitHub Actions passed on code commit `f858e96d622797232b7bc3e0ccae2b611d6f07f0`: `npm ci`, `npm run build`, and `deno check` for both student Edge Functions succeeded. Re-run CI after any further code changes.
+- Live DB currently has no imported student records, no active clearance session, and no enabled required clearance requirements. A controlled student/session test fixture is needed.
+- Payment-email matching verifies access to the receipt email, not legal identity by itself. The college must approve this as the onboarding check or provide a stronger identity-verification step before broad public launch.
+
+### Next actions, in order
+1. Review the draft PR and obtain a passing frontend build.
+2. Verify production Auth confirmation + redirect settings and configure `PAYSTACK_SECRET_KEY` securely.
+3. Import a controlled test student and configure an active clearance session plus required office requirements.
+4. Test payment success, failed/cancelled payment, callback interruption, duplicate-charge prevention, email verification, account linking, password sign-in/reset, and staff-account exclusion.
+5. Deploy `student-portal` and `student-payments` to `cipsazscgpyoaxwukmaw`, then deploy the frontend only after all tests pass.
+6. Verify the live student flow and existing staff portals. Do not merge/deploy early; do not run further migrations unless needed and authorized.
+
+
+## Latest update — 2026-10-23: no-email student access and assisted payment
+
+This section supersedes the earlier email-based student onboarding notes above for the feature branch. The live site and deployed Edge Functions have **not** been changed by this work.
+
+- Added migration `20261023214359_student_activation_and_assisted_payment.sql` for hashed, single-use, 30-minute activation/reset codes and audit fields for staff-assisted payments. Applied to the correct DSCP Supabase project `cipsazscgpyoaxwukmaw`; migration history and table/column existence were verified.
+- Added `manage-student-access` Edge Function source. Active Administrator/SuperAdmin roles can issue activation or reset codes; only SuperAdmin can change the student WhatsApp support number. Student code redemption is public before sign-in (required for first activation and forgotten-password recovery); it validates the single-use code and changes the Auth identity/password server-side. Raw codes are returned once to the issuing staff UI; only hashes are stored.
+- First-time activation is blocked server-side until a successful payment is linked to the currently open clearance session. Students enter registration number, then a paid/unactivated record routes directly to activation/password setup. A single-use college-issued activation code is required; the student chooses and keeps their own password.
+- Student passwords use deterministic internal Supabase Auth identifiers, not student email addresses. Student self-checkout uses the server secret `PAYSTACK_RECEIPT_EMAIL` for Paystack's required receipt email. Admin-assisted checkout uses the authenticated staff account email and stores the registration number plus initiating staff ID.
+- Added the Administrator dashboard tools in `src/components/StudentAccessTools.tsx`; SuperAdmin sees only WhatsApp support configuration, not the assisted-payment/account-code tools.
+- Student payment screen now has “Already paid? Contact support on WhatsApp”. The contact number is read from `app_settings.student_support_whatsapp` and can be changed by SuperAdmin after deployment.
+- Added `manage-student-access` to the CI Deno check.
+
+### Validation and remaining blockers
+- One CI attempt failed because `https://esm.sh/@supabase/supabase-js@2` returned HTTP 521 during dependency download (no TypeScript diagnostic was reported). CI subsequently passed `npm ci`, `npm run build`, and `deno check` for `student-portal`, `student-payments`, and `manage-student-access` on commit `7e681749927109f9536f382f22ac940f577d945f`, including the fix that allows unauthenticated students to redeem one-time codes.
+- The database migration is applied, but the new Edge Function and frontend remain undeployed. Do not deploy either until a Paystack test-mode end-to-end run is completed.
+- Before enabling student self-checkout, set `PAYSTACK_SECRET_KEY` and a college-controlled `PAYSTACK_RECEIPT_EMAIL` as Edge Function secrets in the DSCP project `cipsazscgpyoaxwukmaw`. Do not use the COHT CBT Supabase project.
+- Test in Paystack test mode with a dummy student and active clearance session: student-initiated payment; admin-assisted payment; webhook/callback verification; duplicate-payment prevention; paid student routing directly to activation; expired/reused activation code; invalid code; admin-issued password reset; support WhatsApp link; and staff-role denial for unauthorized callers.
+- The additive database migration was applied and verified. No Edge Function deployment, frontend deployment, PR merge, or production student import was performed. The production database currently has zero student records and no active clearance session, so end-to-end payment/activation testing cannot yet be run against a real record. Confirm Paystack test/live mode and secrets before deployment.

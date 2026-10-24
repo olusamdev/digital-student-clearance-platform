@@ -7,6 +7,7 @@ import OfficeClearance from './components/OfficeClearance';
 import ProvostPortal from './components/ProvostPortal';
 import StudentPortal from './components/StudentPortal';
 import StudentImport from './components/StudentImport';
+import StudentAccessTools from './components/StudentAccessTools';
 
 type StaffProfile = { user_id: string; full_name: string; email: string | null; staff_number: string | null; active: boolean; created_at?: string };
 type RoleAssignment = { role: string; office_id: string | null; active: boolean; office_name?: string | null };
@@ -87,8 +88,25 @@ export default function App() {
       window.setTimeout(() => { if (mounted) void loadStaffContext(nextSession); }, 0);
     });
     const restoreSession = async () => {
-      // Supabase invitation emails may return implicit-flow tokens in the URL fragment,
-      // even when the client is configured for PKCE. Exchange those tokens explicitly.
+      // PKCE invitation links return a one-time authorization code in the query string.
+      // Exchange it before checking stored sessions, otherwise the password button stays disabled.
+      const query = new URLSearchParams(window.location.search);
+      const authCode = query.get('code');
+      if (isAcceptRoute && authCode) {
+        const { data, error: codeExchangeError } = await supabase.auth.exchangeCodeForSession(authCode);
+        if (!mounted) return;
+        if (codeExchangeError || !data.session) {
+          setError('This invitation link is invalid or expired. Ask the SuperAdmin to send a new invitation.');
+          setBusy(false);
+          return;
+        }
+        window.history.replaceState(null, '', window.location.pathname);
+        setSession(data.session);
+        setBusy(false);
+        return;
+      }
+
+      // Supabase invitation emails may also return implicit-flow tokens in the URL fragment.
       const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ''));
       const accessToken = fragment.get('access_token');
       const refreshToken = fragment.get('refresh_token');
@@ -234,6 +252,7 @@ export default function App() {
     <section className="content-grid"><article className="panel account-panel"><div className="panel-heading"><div><p className="eyebrow dark">ACCOUNT STATUS</p><h2>Staff profile</h2></div><span className="status-pill"><span /> Active</span></div><dl className="details-list"><div><dt>Full name</dt><dd>{staff.profile.full_name}</dd></div><div><dt>Email</dt><dd>{staff.profile.email || session.user.email || 'Not set'}</dd></div><div><dt>Staff number</dt><dd>{staff.profile.staff_number || 'Not assigned'}</dd></div><div><dt>Account ID</dt><dd className="uuid">{staff.profile.user_id}</dd></div></dl></article><article className="panel roles-panel"><div className="panel-heading"><div><p className="eyebrow dark">PERMISSIONS</p><h2>Your active roles</h2></div><span className="role-count">{activeRoles.length}</span></div><div className="role-list">{activeRoles.map((item) => <div className="role-item" key={`${item.role}-${item.office_id ?? 'global'}`}><span className="role-icon">✓</span><div><strong>{roleLabels[item.role] ?? item.role}</strong><small>{item.office_id ? `Office assignment · ${item.office_id}` : 'Platform-wide role assignment'}</small></div><span className="role-active">Active</span></div>)}</div><div className="next-step-note"><strong>{isSuperAdmin ? 'SuperAdmin controls enabled' : 'Restricted staff workspace'}</strong><p>{isSuperAdmin ? 'You can invite staff, manage roles, deactivate accounts, and permanently delete staff records. Every change is checked by server-side authorization and audited.' : 'Your workspace is limited to the permissions assigned to your account.'}</p></div></article></section>
     {isSuperAdmin && <InstitutionalSetup />}
     {isSuperAdmin && <StudentImport />}
+    {(activeRoles.some((item) => item.role === 'admin') || isSuperAdmin) && <StudentAccessTools canManageStudents={activeRoles.some((item) => item.role === 'admin') && !isSuperAdmin} canManageSupport={isSuperAdmin} />}
     <OfficeClearance roles={activeRoles.map((item) => item.role)} />
     {isSuperAdmin && <section className="management-section"><div className="section-title"><div><p className="eyebrow dark">PLATFORM ADMINISTRATION</p><h2>Staff management</h2><p className="muted">Invite authorised staff and manage account access. SuperAdmin assignment is intentionally excluded from this form.</p></div><button className="secondary-button" onClick={() => void loadStaffList()} disabled={staffLoading}>{staffLoading ? 'Refreshing...' : 'Refresh list'}</button></div>
       {staffError && <div className="alert error" role="alert">{staffError}</div>}
