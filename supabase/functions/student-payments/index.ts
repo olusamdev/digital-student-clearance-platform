@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
     email = text(authData.user.email, 254).toLowerCase();
   } else {
     // Students do not need personal email accounts. Use the college-controlled Paystack receipt address.
-    email = text(Deno.env.get("PAYSTACK_RECEIPT_EMAIL"), 254).toLowerCase();
+    email = text(Deno.env.get("COLLEGE_RECEIPT_EMAIL") ?? Deno.env.get("PAYSTACK_RECEIPT_EMAIL"), 254).toLowerCase();
   }
   if (!registrationNumber) return reply({ error: "Enter the student's registration number." }, 400, origin);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
