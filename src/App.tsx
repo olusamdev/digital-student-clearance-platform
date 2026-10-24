@@ -88,8 +88,25 @@ export default function App() {
       window.setTimeout(() => { if (mounted) void loadStaffContext(nextSession); }, 0);
     });
     const restoreSession = async () => {
-      // Supabase invitation emails may return implicit-flow tokens in the URL fragment,
-      // even when the client is configured for PKCE. Exchange those tokens explicitly.
+      // PKCE invitation links return a one-time authorization code in the query string.
+      // Exchange it before checking stored sessions, otherwise the password button stays disabled.
+      const query = new URLSearchParams(window.location.search);
+      const authCode = query.get('code');
+      if (isAcceptRoute && authCode) {
+        const { data, error: codeExchangeError } = await supabase.auth.exchangeCodeForSession(authCode);
+        if (!mounted) return;
+        if (codeExchangeError || !data.session) {
+          setError('This invitation link is invalid or expired. Ask the SuperAdmin to send a new invitation.');
+          setBusy(false);
+          return;
+        }
+        window.history.replaceState(null, '', window.location.pathname);
+        setSession(data.session);
+        setBusy(false);
+        return;
+      }
+
+      // Supabase invitation emails may also return implicit-flow tokens in the URL fragment.
       const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ''));
       const accessToken = fragment.get('access_token');
       const refreshToken = fragment.get('refresh_token');
