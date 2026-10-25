@@ -195,3 +195,12 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Cloudflare deployment passed: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40199814367. The existing Worker `dscp` was updated.
 - DSCP Edge Functions are ACTIVE: `student-portal` v11 (`verify_jwt=true`), `student-payments` v5 (`verify_jwt=false`), and `manage-student-access` v4 (`verify_jwt=false`). Deployed sources were checked for code-free activation and the admin callback flow.
 - Browser end-to-end retest is still pending: complete a test-mode admin-assisted payment, confirm return to the staff dashboard with server-verified success, then look up the paid student's registration number at `/student` and confirm direct password setup without an activation code. Also confirm student-initiated payment and password-reset recovery still work.
+
+
+## Student panel fixes — 2026-10-25
+
+- Gender dropdown now offers only Female and Male. Frontend values are normalized to lowercase and the `student-portal` Edge Function validates and saves `female`/`male`, matching the database check constraint. Root cause of the previous save error was PostgreSQL check violation `23514` on `student_records_gender_check` because the UI submitted `Male` instead of `male`.
+- Removed the `STUDENT WORKSPACE` eyebrow, the registration-number helper description, and the Clearance Fee card from the student dashboard. Server-side payment checks remain in place; removing the card does not bypass the payment gate.
+- Clarified the empty requirements message. Database check on the active `2025/2026` session found zero enabled requirements and zero enabled required requirements. Do not create/configure requirements without explicit authorization; clearance requests remain blocked until the college configures them.
+- Files changed: `src/components/StudentPortal.tsx`, `supabase/functions/student-portal/index.ts`.
+- Validation/deployment status: pending CI, merge, Cloudflare frontend deployment, and deployment of the updated `student-portal` Edge Function. After deployment, retest saving particulars with Male and Female and confirm the card/descriptions are gone.
