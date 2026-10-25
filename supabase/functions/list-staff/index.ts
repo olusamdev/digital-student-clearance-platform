@@ -37,12 +37,14 @@ Deno.serve(async (req) => {
     if (!profile || !roles?.some((role) => role.role === "superadmin")) return json({ error: "SuperAdmin access required" }, 403);
 
     const [profilesResult, assignmentsResult, officesResult] = await Promise.all([
-      admin.from("staff_profiles").select("user_id, full_name, email, staff_number, active, created_at").order("full_name", { ascending: true }),
-      admin.from("staff_role_assignments").select("user_id, role, office_id, active"),
+      admin.from("staff_profiles").select("user_id, full_name, username, email, staff_number, must_change_password, active, created_at").order("full_name", { ascending: true }),
+      admin.from("staff_role_assignments").select("user_id, role, office_id, department_id, active"),
       admin.from("clearance_offices").select("id, code, name, active").order("display_order", { ascending: true }),
+      admin.from("departments").select("id, code, name, active").order("name", { ascending: true }),
     ]);
-    if (profilesResult.error || assignmentsResult.error || officesResult.error) {
-      console.error("list-staff query failed", { profiles: profilesResult.error?.message, assignments: assignmentsResult.error?.message, offices: officesResult.error?.message });
+    const departmentsResult = await admin.from("departments").select("id, code, name, active").order("name", { ascending: true });
+    if (profilesResult.error || assignmentsResult.error || officesResult.error || departmentsResult.error) {
+      console.error("list-staff query failed", { profiles: profilesResult.error?.message, assignments: assignmentsResult.error?.message, offices: officesResult.error?.message, departments: departmentsResult.error?.message });
       return json({ error: "Could not load staff directory" }, 500);
     }
 
@@ -68,10 +70,11 @@ Deno.serve(async (req) => {
     }
 
     const officeMap = new Map((officesResult.data ?? []).map((office) => [office.id, office.name]));
+    const departmentMap = new Map((departmentsResult.data ?? []).map((department) => [department.id, department.name]));
     const rolesByUser = new Map<string, unknown[]>();
     for (const assignment of assignmentsResult.data ?? []) {
       const list = rolesByUser.get(assignment.user_id) ?? [];
-      list.push({ role: assignment.role, office_id: assignment.office_id, active: assignment.active, office_name: assignment.office_id ? officeMap.get(assignment.office_id) ?? null : null });
+      list.push({ role: assignment.role, office_id: assignment.office_id, department_id: assignment.department_id ?? null, active: assignment.active, office_name: assignment.office_id ? officeMap.get(assignment.office_id) ?? null : null, department_name: assignment.department_id ? departmentMap.get(assignment.department_id) ?? null : null });
       rolesByUser.set(assignment.user_id, list);
     }
 
@@ -91,7 +94,7 @@ Deno.serve(async (req) => {
       };
     });
 
-    return json({ staff, offices: officesResult.data ?? [] });
+    return json({ staff, offices: officesResult.data ?? [], departments: departmentsResult.data ?? [] });
   } catch (error) {
     console.error("list-staff unexpected error", error);
     return json({ error: "Unexpected server error" }, 500);
