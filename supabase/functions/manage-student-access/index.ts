@@ -78,10 +78,10 @@ Deno.serve(async req => {
       if (!links?.length) return respond({ error: "A verified payment for the active clearance session is required before account activation." }, 402, origin);
       const { data: payments, error: paymentsError } = await db.from("payment_transactions")
         .select("id,payment_mode,status,created_at").in("session_student_id", links.map((link: any) => link.id))
-        .eq("status", "successful").eq("payment_mode", "student_initiated")
+        .eq("status", "successful")
         .order("created_at", { ascending: false }).limit(1);
       if (paymentsError) return respond({ error: "Could not verify how the clearance fee was paid." }, 500, origin);
-      if (!payments?.length) return respond({ error: "This payment requires a college-issued activation code. Contact the college administrator." }, 403, origin);
+      if (!payments?.length) return respond({ error: "A successful verified payment is required before account activation." }, 402, origin);
       const email = await internalEmail(student.registration_number);
       const now = new Date().toISOString();
       const { data: created, error: createError } = await db.auth.admin.createUser({
@@ -98,7 +98,7 @@ Deno.serve(async req => {
       }
       await db.from("audit_events").insert({
         actor_student_id: student.id, event_type: "student.account_activated", entity_type: "student_record",
-        entity_id: student.id, details: { registration_number: student.registration_number, activation_method: "student_initiated_payment" },
+        entity_id: student.id, details: { registration_number: student.registration_number, activation_method: "verified_clearance_payment" },
       });
       return respond({ success: true, activated: true, auth_email: email }, 200, origin);
     }
