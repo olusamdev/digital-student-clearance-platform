@@ -8,7 +8,7 @@
 - Local repo: `C:\Users\ADMIN\Documents\CodeProjects\Digital Student Clearance Platform`.
 - This is separate from COHT CBT Supabase project `mywuufgnbxbivrxjllbp`. Never cross projects.
 - Stack: React 19, Vite 6, TypeScript, Supabase JS, Supabase Edge Functions.
-- User wants concise, evidence-based reports; do not use Lovable or coding agents for this project. Do not deploy frontend until the user builds/tests locally and explicitly runs the deployment step.
+- User wants concise, evidence-based reports; do not use Lovable or coding agents for this project. User has now explicitly authorized production rollout immediately after thorough checks.
 
 ## Confirmed requirements
 - Final-year students only, loaded by College staff.
@@ -248,3 +248,14 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Added `manage-clearance/index.ts` to CI's Deno checks.
 - Branch: `fix/provost-queue-and-staff-roles`; PR #10: https://github.com/olusamdev/digital-student-clearance-platform/pull/10. CI passed (`npm ci`, `npm run build`, and Deno checks including `manage-clearance`): https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40230166238. Not merged or deployed yet.
 - Live production retest remains necessary after merge/deployment: verify office staff only see their assigned office requests, Provost sees no office requests but sees eligible Final Assent cases, and each of the six invite roles can be selected (with office required only for Clearance Officer/Unit Head).
+
+
+## Staff account policy and HOD routing — 2026-10-25
+
+- New staff provisioning replaces email invitations with SuperAdmin-created accounts: full name, unique username, optional staff number, role, and generated six-character uppercase alphanumeric activation code. New Auth identities use a synthetic internal login address derived from username; no email is required.
+- Staff sign in using username + activation code. Accounts marked `must_change_password=true` are forced through the first-login password-change screen; `complete-staff-setup` updates the password server-side and clears the flag. Existing staff can still sign in using their existing email and password.
+- Added distinct `head_of_department` role. HOD assignment requires both a department and a clearance office. The database queue/action authorization scopes HOD requests to the assigned office and the student’s matching department. Request notifications are also sent only to HODs assigned to that student’s department.
+- Frontend and function source changes are on PR #10 branch `fix/provost-queue-and-staff-roles`; CI passed on an earlier commit, and must be rechecked on the latest head before merge.
+- Production DSCP database migration `20261025205034_staff_activation_and_hod_scope` has been applied. Its DDL/function body was first executed inside a transaction and rolled back successfully; the enum value was added separately so the remaining schema could be syntax-tested.
+- Production Edge Functions deployed with JWT verification enabled: `invite-staff` v15, `complete-staff-setup` v1, `list-staff` v16.
+- Frontend changes are not yet merged/deployed. No new staff account or HOD assignment has been created, and no end-to-end login/department routing test has been performed. Before declaring complete: pass latest CI, merge PR #10, verify Cloudflare frontend deployment, then test a controlled HOD account for Public Health and another department; confirm each sees/receives only its own department’s HOD requests and cannot act on another department’s requests. Also test first-login activation code, mandatory password change, old code rejection after change, and legacy staff email login.
