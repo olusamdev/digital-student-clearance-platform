@@ -78,10 +78,10 @@ Deno.serve(async req => {
       if (!links?.length) return respond({ error: "A verified payment for the active clearance session is required before account activation." }, 402, origin);
       const { data: payments, error: paymentsError } = await db.from("payment_transactions")
         .select("id,payment_mode,status,created_at").in("session_student_id", links.map((link: any) => link.id))
-        .eq("status", "successful").eq("payment_mode", "student_initiated")
+        .eq("status", "successful")
         .order("created_at", { ascending: false }).limit(1);
       if (paymentsError) return respond({ error: "Could not verify how the clearance fee was paid." }, 500, origin);
-      if (!payments?.length) return respond({ error: "This payment requires a college-issued activation code. Contact the college administrator." }, 403, origin);
+      if (!payments?.length) return respond({ error: "A successful verified payment is required before account activation." }, 402, origin);
       const email = await internalEmail(student.registration_number);
       const now = new Date().toISOString();
       const { data: created, error: createError } = await db.auth.admin.createUser({
@@ -98,26 +98,20 @@ Deno.serve(async req => {
       }
       await db.from("audit_events").insert({
         actor_student_id: student.id, event_type: "student.account_activated", entity_type: "student_record",
-        entity_id: student.id, details: { registration_number: student.registration_number, activation_method: "student_initiated_payment" },
+        entity_id: student.id, details: { registration_number: student.registration_number, activation_method: "verified_clearance_payment" },
       });
       return respond({ success: true, activated: true, auth_email: email }, 200, origin);
     }
 
-    if (action === "complete_activation" || action === "complete_password_reset") {
+    if (action === "complete_password_reset") {
       const registrationNumber = reg(p.registration_number), suppliedCode = str(p.code, 40).toUpperCase().replace(/[^A-Z0-9]/g, "");
       const password = typeof p.password === "string" ? p.password : "";
       if (!registrationNumber || suppliedCode.length < 8 || password.length < 8) return respond({ error: "Enter your registration number, code, and a password of at least 8 characters." }, 400, origin);
       const { data: student, error: studentError } = await db.from("student_records").select("id,registration_number,auth_user_id").eq("registration_number", registrationNumber).maybeSingle();
       if (studentError) return respond({ error: "Could not verify the student record." }, 500, origin);
       if (!student) return respond({ error: "Student record not found." }, 404, origin);
-      const purpose = action === "complete_activation" ? "activation" : "password_reset";
-      if (purpose === "activation") {
-        const paidStatus = await hasCurrentPaidSession(db, student.id);
-        if (paidStatus.error) return respond({ error: "Could not verify the clearance payment." }, 500, origin);
-        if (!paidStatus.paid) return respond({ error: "A verified payment for the active clearance session is required before account activation." }, 402, origin);
-      }
-      if (purpose === "activation" && student.auth_user_id) return respond({ error: "This account is already activated. Contact an administrator if you cannot sign in." }, 409, origin);
-      if (purpose === "password_reset" && !student.auth_user_id) return respond({ error: "This account has not been activated." }, 409, origin);
+      if (!student.auth_user_id) return respond({ error: "This account has not been activated." }, 409, origin);
+      const purpose = "password_reset";
       const tokenHash = await hash(purpose + ":" + student.id + ":" + suppliedCode);
       const { data: token, error: tokenError } = await db.from("student_access_tokens").select("id,expires_at,consumed_at")
         .eq("student_id", student.id).eq("purpose", purpose).eq("token_hash", tokenHash).maybeSingle();
@@ -127,21 +121,6 @@ Deno.serve(async req => {
       const { data: claimed, error: claimError } = await db.from("student_access_tokens").update({ consumed_at: now })
         .eq("id", token.id).is("consumed_at", null).gt("expires_at", now).select("id").maybeSingle();
       if (claimError || !claimed) return respond({ error: "Code has already been used or expired. Request a new code." }, 409, origin);
-
-      if (purpose === "activation") {
-        const email = await internalEmail(student.registration_number);
-        const { data: created, error: createError } = await db.auth.admin.createUser({
-          email, password, email_confirm: true,
-          user_metadata: { registration_number: student.registration_number, account_type: "student" },
-        });
-        if (createError || !created.user) return respond({ error: "Account setup failed. Contact the college to request a fresh activation code." }, 500, origin);
-        const { data: linked, error: linkError } = await db.from("student_records").update({
-          auth_user_id: created.user.id, auth_email: email, account_setup_completed_at: now, updated_at: now,
-        }).eq("id", student.id).is("auth_user_id", null).select("id").maybeSingle();
-        if (linkError || !linked) return respond({ error: "Could not link the account safely. Contact the college." }, 409, origin);
-        await db.from("audit_events").insert({ actor_student_id: student.id, event_type: "student.account_activated", entity_type: "student_record", entity_id: student.id, details: { registration_number: student.registration_number } });
-        return respond({ success: true, activated: true, auth_email: email }, 200, origin);
-      }
       const { error: passwordError } = await db.auth.admin.updateUserById(student.auth_user_id, { password });
       if (passwordError) return respond({ error: "Password reset failed. Ask the college to issue a new code." }, 500, origin);
       await db.from("audit_events").insert({ actor_student_id: student.id, event_type: "student.password_reset_completed", entity_type: "student_record", entity_id: student.id, details: { registration_number: student.registration_number } });
@@ -175,26 +154,20 @@ Deno.serve(async req => {
       return respond({ success: true, whatsapp }, 200, origin);
     }
 
-    if (action === "issue_activation" || action === "issue_password_reset") {
+    if (action === "issue_password_reset") {
       const registrationNumber = reg(p.registration_number);
       if (!registrationNumber) return respond({ error: "Enter the student's registration number." }, 400, origin);
       const { data: student, error: studentError } = await db.from("student_records").select("id,registration_number,full_name,auth_user_id").eq("registration_number", registrationNumber).maybeSingle();
       if (studentError) return respond({ error: "Could not check the student record." }, 500, origin);
       if (!student) return respond({ error: "Student record not found." }, 404, origin);
-      const purpose = action === "issue_activation" ? "activation" : "password_reset";
-      if (purpose === "activation") {
-        const paidStatus = await hasCurrentPaidSession(db, student.id);
-        if (paidStatus.error) return respond({ error: "Could not verify the clearance payment." }, 500, origin);
-        if (!paidStatus.paid) return respond({ error: "A verified payment for the active clearance session is required before an activation code can be issued." }, 402, origin);
-      }
-      if (purpose === "activation" && student.auth_user_id) return respond({ error: "This account is already activated." }, 409, origin);
-      if (purpose === "password_reset" && !student.auth_user_id) return respond({ error: "This account has not been activated." }, 409, origin);
+      if (!student.auth_user_id) return respond({ error: "This account has not been activated." }, 409, origin);
+      const purpose = "password_reset";
       await db.from("student_access_tokens").update({ consumed_at: new Date().toISOString() }).eq("student_id", student.id).eq("purpose", purpose).is("consumed_at", null);
       const rawCode = code(), tokenHash = await hash(purpose + ":" + student.id + ":" + rawCode);
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       const { error: insertError } = await db.from("student_access_tokens").insert({ student_id: student.id, purpose, token_hash: tokenHash, expires_at: expiresAt, issued_by: actor.id });
       if (insertError) return respond({ error: "Could not issue a secure code." }, 500, origin);
-      await db.from("audit_events").insert({ actor_student_id: student.id, event_type: purpose === "activation" ? "admin.student_activation_code_issued" : "admin.student_password_reset_issued", entity_type: "student_record", entity_id: student.id, details: { registration_number: student.registration_number, issued_by: actor.id, expires_at: expiresAt } });
+      await db.from("audit_events").insert({ actor_student_id: student.id, event_type: "admin.student_password_reset_issued", entity_type: "student_record", entity_id: student.id, details: { registration_number: student.registration_number, issued_by: actor.id, expires_at: expiresAt } });
       return respond({ success: true, code: rawCode, expires_at: expiresAt, student: { full_name: student.full_name, registration_number: student.registration_number } }, 200, origin);
     }
     return respond({ error: "Unsupported student access action." }, 400, origin);

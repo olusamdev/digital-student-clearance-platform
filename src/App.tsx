@@ -3,8 +3,6 @@ import type { Session } from '@supabase/supabase-js';
 import { envReady, supabase } from './supabase';
 import { describeFunctionError } from './functionErrors';
 import InstitutionalSetup from './components/InstitutionalSetup';
-import OfficeClearance from './components/OfficeClearance';
-import ProvostPortal from './components/ProvostPortal';
 import StudentPortal from './components/StudentPortal';
 import StudentImport from './components/StudentImport';
 import StudentAccessTools from './components/StudentAccessTools';
@@ -21,14 +19,7 @@ const roleLabels: Record<string, string> = {
   unit_head: 'Unit Head', registrar: 'Registrar', provost: 'Provost', certification_officer: 'Certification Officer',
 };
 const statusLabels: Record<StaffStatus, string> = { active: 'Active', invited: 'Invited', inactive: 'Inactive', missing: 'Login missing' };
-const assignableRoles = [
-  { value: 'admin', label: 'Administrator' },
-  { value: 'clearance_officer', label: 'Clearance Officer' },
-  { value: 'unit_head', label: 'Unit Head' },
-  { value: 'registrar', label: 'Registrar' },
-  { value: 'provost', label: 'Provost' },
-  { value: 'certification_officer', label: 'Certification Officer' },
-];
+const assignableRoles = [{ value: 'admin', label: 'Administrator' }];
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -46,7 +37,7 @@ export default function App() {
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteNumber, setInviteNumber] = useState('');
-  const [inviteRole, setInviteRole] = useState('clearance_officer');
+  const [inviteRole, setInviteRole] = useState('admin');
   const [inviteOffice, setInviteOffice] = useState('');
   const [inviteBusy, setInviteBusy] = useState(false);
   const [invitePassword, setInvitePassword] = useState('');
@@ -59,7 +50,6 @@ export default function App() {
   const [deletingId, setDeletingId] = useState('');
   const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
   const isAcceptRoute = currentPath === '/accept-invite';
-  const isProvostRoute = currentPath === '/provost';
   const isStudentRoute = currentPath === '/student';
 
   const loadStaffContext = useCallback(async (currentSession: Session) => {
@@ -83,7 +73,7 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!mounted) return;
       if (!nextSession) { setSession(null); setStaff(null); setBusy(false); return; }
-      // Invitation sessions must remain on the password-setup route until the invitee sets a password.
+      // Invitation and student sessions must remain on their dedicated routes.
       if (isAcceptRoute || isStudentRoute) { setSession(nextSession); setBusy(false); return; }
       window.setTimeout(() => { if (mounted) void loadStaffContext(nextSession); }, 0);
     });
@@ -138,6 +128,25 @@ export default function App() {
     void restoreSession();
     return () => { mounted = false; listener.subscription.unsubscribe(); };
   }, [isAcceptRoute, isStudentRoute, loadStaffContext]);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const paymentReturn = query.get('payment');
+    const reference = query.get('reference') || query.get('trxref');
+    if (paymentReturn !== 'success' || !reference) return;
+    let mounted = true;
+    void (async () => {
+      const { data, error: verifyError } = await supabase.functions.invoke('student-payments', { body: { action: 'verify', payload: { reference } } });
+      if (!mounted) return;
+      if (verifyError || data?.error || !data?.success) {
+        setError(verifyError ? await describeFunctionError(verifyError, 'student-payments', 'Payment return could not be verified.') : String(data?.error || 'Payment could not be verified. Check the student payment record before retrying.'));
+      } else {
+        setNotice('Payment succeeded and was verified. You have been returned to the admin dashboard. The student can now enter their registration number in the Student Portal to create a password.');
+      }
+      window.history.replaceState(null, '', window.location.pathname);
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const isSuperAdmin = staff?.roles.some((item) => item.active && item.role === 'superadmin') ?? false;
   const loadStaffList = useCallback(async () => {
@@ -246,14 +255,11 @@ export default function App() {
     return <main className="auth-layout"><section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Clearance, without the paperwork.</h1><p>A secure staff portal for managing final-year student clearance and institutional approvals.</p></div><p className="panel-footnote">Authorised personnel only · Activity may be audited</p></section><section className="form-panel"><form className="login-card" onSubmit={handleSignIn}><p className="eyebrow dark">STAFF PORTAL</p><h2>Welcome back</h2><p className="muted">Sign in with your assigned staff account.</p>{!envReady && <div className="alert warning">Supabase configuration is missing. Set up <code>.env.local</code> before signing in.</div>}{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="email">Email address</label><input id="email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="staff@college.edu.ng" required /><label htmlFor="password">Password</label><input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" required /><button className="primary-button" type="submit" disabled={submitting || !envReady}>{submitting ? 'Signing in...' : 'Sign in securely'}<span aria-hidden="true">→</span></button><p className="security-note"><span className="shield">✓</span> No public registration. Staff accounts are provisioned by authorised administrators.</p><p className="security-note">Student? <a href="/student">Open the student portal</a>.</p></form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section></main>;
   }
 
-  if (isProvostRoute) return <ProvostPortal fullName={staff.profile.full_name} email={staff.profile.email || session.user.email || null} hasProvostRole={activeRoles.some((item) => item.role === 'provost')} onSignOut={() => void handleSignOut()} />;
-
   return <main className="dashboard-layout"><header className="topbar"><div className="brand-lockup"><div className="brand-mark small">COHT</div><span>Digital Clearance</span></div><button className="secondary-button" onClick={handleSignOut}>Sign out</button></header><section className="welcome-block"><p className="eyebrow dark">STAFF WORKSPACE</p><h1>Welcome, {staff.profile.full_name}</h1><p className="muted">Your account is authenticated and your active role assignment has been loaded.</p></section>{activeRoles.some((item) => item.role === 'provost') && <p><a className="secondary-button" href="/provost">Open dedicated Provost portal</a></p>}{error && <div className="alert error dashboard-alert" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}
     <section className="content-grid"><article className="panel account-panel"><div className="panel-heading"><div><p className="eyebrow dark">ACCOUNT STATUS</p><h2>Staff profile</h2></div><span className="status-pill"><span /> Active</span></div><dl className="details-list"><div><dt>Full name</dt><dd>{staff.profile.full_name}</dd></div><div><dt>Email</dt><dd>{staff.profile.email || session.user.email || 'Not set'}</dd></div><div><dt>Staff number</dt><dd>{staff.profile.staff_number || 'Not assigned'}</dd></div><div><dt>Account ID</dt><dd className="uuid">{staff.profile.user_id}</dd></div></dl></article><article className="panel roles-panel"><div className="panel-heading"><div><p className="eyebrow dark">PERMISSIONS</p><h2>Your active roles</h2></div><span className="role-count">{activeRoles.length}</span></div><div className="role-list">{activeRoles.map((item) => <div className="role-item" key={`${item.role}-${item.office_id ?? 'global'}`}><span className="role-icon">✓</span><div><strong>{roleLabels[item.role] ?? item.role}</strong><small>{item.office_id ? `Office assignment · ${item.office_id}` : 'Platform-wide role assignment'}</small></div><span className="role-active">Active</span></div>)}</div><div className="next-step-note"><strong>{isSuperAdmin ? 'SuperAdmin controls enabled' : 'Restricted staff workspace'}</strong><p>{isSuperAdmin ? 'You can invite staff, manage roles, deactivate accounts, and permanently delete staff records. Every change is checked by server-side authorization and audited.' : 'Your workspace is limited to the permissions assigned to your account.'}</p></div></article></section>
     {isSuperAdmin && <InstitutionalSetup />}
     {isSuperAdmin && <StudentImport />}
     {(activeRoles.some((item) => item.role === 'admin') || isSuperAdmin) && <StudentAccessTools canManageStudents={activeRoles.some((item) => item.role === 'admin') && !isSuperAdmin} canManageSupport={isSuperAdmin} />}
-    <OfficeClearance roles={activeRoles.map((item) => item.role)} />
     {isSuperAdmin && <section className="management-section"><div className="section-title"><div><p className="eyebrow dark">PLATFORM ADMINISTRATION</p><h2>Staff management</h2><p className="muted">Invite authorised staff and manage account access. SuperAdmin assignment is intentionally excluded from this form.</p></div><button className="secondary-button" onClick={() => void loadStaffList()} disabled={staffLoading}>{staffLoading ? 'Refreshing...' : 'Refresh list'}</button></div>
       {staffError && <div className="alert error" role="alert">{staffError}</div>}
       <div className="management-grid"><article className="panel"><div className="panel-heading"><div><p className="eyebrow dark">NEW ACCOUNT</p><h2>Invite a staff member</h2></div></div><form className="management-form" onSubmit={handleInvite}><label htmlFor="invite-name">Full name</label><input id="invite-name" value={inviteName} onChange={(e) => setInviteName(e.target.value)} maxLength={160} required /><label htmlFor="invite-email">Email address</label><input id="invite-email" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required /><label htmlFor="invite-number">Staff number <span className="optional">Optional</span></label><input id="invite-number" value={inviteNumber} onChange={(e) => setInviteNumber(e.target.value)} maxLength={80} /><label htmlFor="invite-role">Role</label><select id="invite-role" value={inviteRole} onChange={(e) => { setInviteRole(e.target.value); setInviteOffice(''); }} required>{assignableRoles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select>{(inviteRole === 'clearance_officer' || inviteRole === 'unit_head') && <><label htmlFor="invite-office">Clearance office</label><select id="invite-office" value={inviteOffice} onChange={(e) => setInviteOffice(e.target.value)} disabled={staffLoading} required><option value="">Select an active office</option>{offices.filter((office) => office.active).map((office) => <option key={office.id} value={office.id}>{office.name} ({office.code})</option>)}</select>{staffLoading && offices.length === 0 ? <p className="field-note">Loading active offices...</p> : offices.filter((office) => office.active).length === 0 && <p className="field-note">No active offices were returned. Add/configure offices before inviting office-scoped staff.</p>}</>}<button className="primary-button" type="submit" disabled={inviteBusy || (['clearance_officer','unit_head'].includes(inviteRole) && !inviteOffice)}>{inviteBusy ? 'Sending invitation...' : 'Send staff invitation'}<span aria-hidden="true">→</span></button><p className="field-note">An invitation email is sent. The recipient sets their password on the secure acceptance page.</p></form></article>

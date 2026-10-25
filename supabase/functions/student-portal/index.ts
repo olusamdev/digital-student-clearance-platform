@@ -69,15 +69,13 @@ Deno.serve(async (req) => {
       const activeLinks = activeSession ? links.filter((link) => link.session_id === activeSession.id) : [];
       const paymentVerified = activeLinks.some((link) => Boolean(link.payment_unlocked_at));
       let paymentPending = false;
-      let activationRequiresCode = true;
+      const activationRequiresCode = false;
       if (activeLinks.length) {
         const { data: transactions, error: transactionError } = await admin.from("payment_transactions")
           .select("status,payment_mode,created_at").in("session_student_id", activeLinks.map((link) => link.id))
           .order("created_at", { ascending: false }).limit(10);
         if (transactionError) return json({ error: "Could not check your payment status. Please try again." }, 500, origin);
         paymentPending = !paymentVerified && (transactions ?? []).some((item) => ["pending", "initiated", "successful"].includes(item.status));
-        const successfulTransaction = (transactions ?? []).find((item) => item.status === "successful");
-        if (paymentVerified && successfulTransaction) activationRequiresCode = successfulTransaction.payment_mode !== "student_initiated";
       }
       return json({
         success: true,
