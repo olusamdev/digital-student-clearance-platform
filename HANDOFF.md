@@ -204,3 +204,12 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Clarified the empty requirements message. Database check on the active `2025/2026` session found zero enabled requirements and zero enabled required requirements. Do not create/configure requirements without explicit authorization; clearance requests remain blocked until the college configures them.
 - Files changed: `src/components/StudentPortal.tsx`, `supabase/functions/student-portal/index.ts`.
 - Validation/deployment status: pending CI, merge, Cloudflare frontend deployment, and deployment of the updated `student-portal` Edge Function. After deployment, retest saving particulars with Male and Female and confirm the card/descriptions are gone.
+
+
+### Deployment result — student panel fixes
+
+- PR #7 merged as `0d5b2c3341c50fb533d866f5c859c515cd94613f`.
+- Validation passed: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40218805863
+- Cloudflare frontend deployment passed: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40218805850
+- Supabase `student-portal` Edge Function deployed as ACTIVE version 12 (`verify_jwt=true)); fetched deployed source confirms lowercase gender normalization and male/female validation.
+- Still needs browser retest by user: save particulars using Male and Female; verify the old helper text, workspace label, and fee card are absent. The active session still has no enabled clearance requirements; this was intentionally not changed.
