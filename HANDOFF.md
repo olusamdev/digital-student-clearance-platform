@@ -170,3 +170,16 @@ This update supersedes earlier statements that the latest student payment/accoun
   - Latest test transaction is recorded as successful `student_initiated`, NGN 1,700, and clearance access is unlocked; the student account is not yet activated. This is eligible for the new code-free password setup path.
   - SuperAdmin WhatsApp validation now accepts 10–15 digits after removing common formatting; for Nigeria, use digits with country code such as `2348012345678`.
 - Still required: user retests the already-paid student on `/student` (enter registration number; do not pay again) and confirms password creation appears without activation code; user also retries saving the WhatsApp support number. Separately verify an admin-assisted payment still requests its activation code.
+
+
+## 2026-10-25 — Admin-assisted payment and simplified admin workspace
+
+Branch: `fix/admin-payment-return-and-simplify-admin`
+
+- Admin-assisted Paystack checkout now returns to the existing staff dashboard (`/`) rather than the student portal. The dashboard reads Paystack's callback reference, verifies it through `student-payments`, and shows a success notice only after server verification succeeds.
+- Student activation no longer requires a one-time activation code, regardless of whether the payment was student-initiated or admin-assisted. The student enters their registration number at `/student`; if payment is verified and the account is not yet activated, the portal opens password setup directly.
+- Server-side activation accepts any successful verified payment attached to the current open session; it does not trust the browser's payment status. Legacy activation-code issue/redeem actions are disabled. Password-reset codes remain available for account recovery.
+- Removed the OfficeClearance dashboard component, including office queue/completed-clearance sections. Staff invitation role choices are limited to Administrator; SuperAdmin remains a platform role. The dedicated Provost route is no longer rendered from the main app.
+- Files changed: `src/App.tsx`, `src/components/StudentPortal.tsx`, `src/components/StudentAccessTools.tsx`, `supabase/functions/student-portal/index.ts`, `supabase/functions/manage-student-access/index.ts`, `supabase/functions/student-payments/index.ts`.
+- Status: changes are on the feature branch and still require CI/build checks, review, merge, deployment of the three changed Supabase Edge Functions, and Cloudflare frontend deployment. Do not describe production as updated until those steps pass.
+- Retest after deployment: (1) admin-assisted Paystack payment returns to dashboard and confirms success, (2) paid student enters registration number and creates password without a code, (3) student self-payment still works, (4) password-reset code still works, (5) staff dashboard has no office queue or completed-clearance sections.
