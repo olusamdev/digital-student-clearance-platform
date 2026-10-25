@@ -40,7 +40,6 @@ Deno.serve(async (req) => {
       admin.from("staff_profiles").select("user_id, full_name, username, email, staff_number, must_change_password, active, created_at").order("full_name", { ascending: true }),
       admin.from("staff_role_assignments").select("user_id, role, office_id, department_id, active"),
       admin.from("clearance_offices").select("id, code, name, active").order("display_order", { ascending: true }),
-      admin.from("departments").select("id, code, name, active").order("name", { ascending: true }),
     ]);
     const departmentsResult = await admin.from("departments").select("id, code, name, active").order("name", { ascending: true });
     if (profilesResult.error || assignmentsResult.error || officesResult.error || departmentsResult.error) {
