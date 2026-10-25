@@ -34,21 +34,11 @@ export default function ProvostPortal({ fullName, email, hasProvostRole, onSignO
             <h1>Welcome, {fullName}</h1>
             <p className="muted">Review completed office clearances, record Final Assent decisions, and monitor completed student clearances.</p>
           </section>
-          <section className="content-grid">
-            <article className="panel account-panel">
-              <div className="panel-heading"><div><p className="eyebrow dark">SIGNED-IN ACCOUNT</p><h2>Provost profile</h2></div><span className="status-pill"><span /> Authenticated</span></div>
-              <dl className="details-list">
-                <div><dt>Full name</dt><dd>{fullName}</dd></div>
-                <div><dt>Email</dt><dd>{email || 'Not set'}</dd></div>
-                <div><dt>Authority</dt><dd>Final Assent decisions</dd></div>
-              </dl>
-            </article>
-            <article className="panel roles-panel">
-              <div className="panel-heading"><div><p className="eyebrow dark">DECISION RULE</p><h2>Approval safeguards</h2></div></div>
-              <p>Only students whose enabled, required clearance items are all cleared can receive Final Assent. Decisions are recorded with the signed-in officer and timestamp.</p>
-              <p className="field-note">A declined student can be reviewed again after outstanding issues are resolved. Granting assent is not available until the server confirms eligibility.</p>
-            </article>
-          </section>
+          <footer className="dashboard-account-footer" aria-label="Provost account status and permissions">
+            <div><strong>Account status:</strong> Authenticated <span className="footer-separator">·</span> <strong>Officer:</strong> {fullName} <span className="footer-separator">·</span> <strong>Email:</strong> {email || 'Not set'} <span className="footer-separator">·</span> <strong>Authority:</strong> Final Assent decisions</div>
+            <div><strong>Permission rule:</strong> Final Assent is available only when all enabled, required clearance items are cleared. Decisions are validated and recorded by the server with the signed-in officer and timestamp.</div>
+            <p className="field-note">A declined student can be reviewed again after outstanding issues are resolved.</p>
+          </footer>
           <OfficeClearance roles={['provost']} />
         </>
       )}
