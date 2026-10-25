@@ -259,3 +259,11 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Production DSCP database migrations `staff_activation_and_hod_scope` and `unique_active_hod_assignment` have been applied. DDL/function definitions were tested in a transaction and rolled back before applying; the enum value was added separately so the remaining schema could be syntax-tested.
 - Production Edge Functions deployed with JWT verification enabled: `invite-staff` v15, `complete-staff-setup` v1, `list-staff` v16.
 - Frontend changes are not yet merged/deployed. No new staff account or HOD assignment has been created, and no end-to-end login/department routing test has been performed. Before declaring complete: pass latest CI, merge PR #10, verify Cloudflare frontend deployment, then test a controlled HOD account for Public Health and another department; confirm each sees/receives only its own department’s HOD requests and cannot act on another department’s requests. Also test first-login activation code, mandatory password change, old code rejection after change, and legacy staff email login.
+
+## Focused staff recovery and SuperAdmin queue fix — 2026-10-25
+
+- Added a SuperAdmin-only `reset-staff-activation-code` Edge Function. It generates a new six-character code, replaces the staff account password, sets `must_change_password=true`, and audits the reset. The code is returned once and is not stored in the database. Only active staff accounts can be reset.
+- Staff directory adds **Generate new activation code** for active staff accounts. The displayed code must be delivered securely; staff sign in with it and are forced through the existing password-change screen.
+- SuperAdmin no longer mounts the clearance workflow component, including when a SuperAdmin account has another role assigned. The database workflow exclusion from migration `20261025211257_20261025210000_superadmin_clearance_request_isolation` remains the server-side safeguard.
+- Removed the **OFFICE QUEUE** eyebrow label; the Requests heading and assigned-staff request workflow remain.
+- Scope is limited to `src/App.tsx`, `src/components/OfficeClearance.tsx`, and `supabase/functions/reset-staff-activation-code/index.ts`. Build, CI, function deployment and production verification status must be updated after checks complete.

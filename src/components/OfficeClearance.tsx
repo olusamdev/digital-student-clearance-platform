@@ -53,13 +53,13 @@ type QueueData = {
   reminder_interval_hours: number;
 };
 
-const eligibleRoles = new Set(['superadmin', 'admin', 'clearance_officer', 'unit_head', 'head_of_department', 'provost', 'registrar']);
+const eligibleRoles = new Set(['admin', 'clearance_officer', 'unit_head', 'head_of_department', 'provost', 'registrar']);
 const dateText = (value: string | null) => value ? new Date(value).toLocaleString() : '—';
 
 export default function OfficeClearance({ roles }: { roles: string[] }) {
   const relevant = roles.some((role) => eligibleRoles.has(role));
   const isProvost = roles.includes('provost');
-  const isRegistrar = roles.includes('registrar') || roles.includes('superadmin') || roles.includes('admin');
+  const isRegistrar = roles.includes('registrar') || roles.includes('admin');
   const [queue, setQueue] = useState<QueueData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -182,7 +182,7 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
       )}
 
       <div className="clearance-section-heading">
-        <div><p className="eyebrow dark">OFFICE QUEUE</p><h3>Requests</h3></div>
+        <div><h3>Requests</h3></div>
         <span className="role-count">{queue?.requests.length ?? 0}</span>
       </div>
       {loading ? <p className="muted">Loading clearance queue…</p> : !queue?.requests.length ? (
