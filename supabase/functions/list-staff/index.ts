@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
       const emailConfirmedAt = auth?.email_confirmed_at ?? auth?.confirmed_at ?? null;
       const bannedUntil = auth?.banned_until ? Date.parse(auth.banned_until) : Number.NaN;
       const isBanned = Number.isFinite(bannedUntil) && bannedUntil > now;
-      const status = !item.active || isBanned ? "inactive" : !auth ? "missing" : emailConfirmedAt ? "active" : "invited";
+      const status = !item.active || isBanned ? "inactive" : item.must_change_password ? "invited" : !auth ? "missing" : emailConfirmedAt ? "active" : "invited";
       return {
         ...item,
         status,
