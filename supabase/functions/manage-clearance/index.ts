@@ -45,6 +45,37 @@ Deno.serve(async (req) => {
       if (error.code === "23505") return json({ error: "This record already exists." }, 409);
       return json({ error: error.message || "Clearance operation failed." }, 400);
     }
+    if (action === "list_queue" && data && typeof data === "object" && !Array.isArray(data)) {
+      const { data: assignments, error: assignmentError } = await admin
+        .from("staff_role_assignments")
+        .select("role, office_id")
+        .eq("user_id", userData.user.id)
+        .eq("active", true);
+      if (assignmentError) {
+        console.error("manage-clearance role lookup failed", { actor: userData.user.id, message: assignmentError.message });
+        return json({ error: "Could not verify clearance office assignments" }, 500);
+      }
+
+      const roles = assignments ?? [];
+      const hasPlatformWideQueueAccess = roles.some((item) => ["superadmin", "admin"].includes(item.role));
+      if (!hasPlatformWideQueueAccess) {
+        const assignedOfficeIds = new Set(
+          roles
+            .filter((item) => ["clearance_officer", "unit_head"].includes(item.role) && item.office_id)
+            .map((item) => item.office_id as string),
+        );
+        const result = data as Record<string, unknown>;
+        const requests = Array.isArray(result.requests) ? result.requests : [];
+        return json({
+          ...result,
+          requests: requests.filter((item) =>
+            item && typeof item === "object" &&
+            assignedOfficeIds.has(String((item as Record<string, unknown>).office_id ?? "")),
+          ),
+        });
+      }
+    }
+
     return json(data ?? { success: true });
   } catch (error) {
     console.error("manage-clearance unexpected error", error);

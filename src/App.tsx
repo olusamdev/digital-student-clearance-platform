@@ -4,23 +4,34 @@ import { envReady, supabase } from './supabase';
 import { describeFunctionError } from './functionErrors';
 import InstitutionalSetup from './components/InstitutionalSetup';
 import ClearanceRequirements from './components/ClearanceRequirements';
+import OfficeClearance from './components/OfficeClearance';
+import ProvostPortal from './components/ProvostPortal';
 import StudentPortal from './components/StudentPortal';
 import StudentImport from './components/StudentImport';
 import StudentAccessTools from './components/StudentAccessTools';
 
-type StaffProfile = { user_id: string; full_name: string; email: string | null; staff_number: string | null; active: boolean; created_at?: string };
-type RoleAssignment = { role: string; office_id: string | null; active: boolean; office_name?: string | null };
+type StaffProfile = { user_id: string; full_name: string; username?: string | null; email: string | null; staff_number: string | null; must_change_password?: boolean; active: boolean; created_at?: string };
+type RoleAssignment = { role: string; office_id: string | null; department_id?: string | null; active: boolean; office_name?: string | null; department_name?: string | null };
 type StaffContext = { profile: StaffProfile; roles: RoleAssignment[] };
 type Office = { id: string; code: string; name: string; active: boolean };
+type Department = { id: string; code: string | null; name: string; active: boolean };
 type StaffStatus = 'active' | 'invited' | 'inactive' | 'missing';
 type StaffRow = StaffProfile & { roles: RoleAssignment[]; status: StaffStatus; invited_at: string | null; email_confirmed_at: string | null };
 
 const roleLabels: Record<string, string> = {
   superadmin: 'Super Administrator', admin: 'Administrator', clearance_officer: 'Clearance Officer',
-  unit_head: 'Unit Head', registrar: 'Registrar', provost: 'Provost', certification_officer: 'Certification Officer',
+  unit_head: 'Unit Head', head_of_department: 'Head of Department', registrar: 'Registrar', provost: 'Provost', certification_officer: 'Certification Officer',
 };
 const statusLabels: Record<StaffStatus, string> = { active: 'Active', invited: 'Invited', inactive: 'Inactive', missing: 'Login missing' };
-const assignableRoles = [{ value: 'admin', label: 'Administrator' }];
+const assignableRoles = [
+  { value: 'admin', label: 'Administrator' },
+  { value: 'clearance_officer', label: 'Clearance Officer' },
+  { value: 'unit_head', label: 'Unit Head' },
+  { value: 'head_of_department', label: 'Head of Department' },
+  { value: 'registrar', label: 'Registrar' },
+  { value: 'provost', label: 'Provost' },
+  { value: 'certification_officer', label: 'Certification Officer' },
+];
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -33,12 +44,18 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [staffRows, setStaffRows] = useState<StaffRow[]>([]);
   const [offices, setOffices] = useState<Office[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [staffLoading, setStaffLoading] = useState(false);
   const [staffError, setStaffError] = useState('');
   const [inviteName, setInviteName] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteUsername, setInviteUsername] = useState('');
+  const [inviteDepartment, setInviteDepartment] = useState('');
+  const [activationCode, setActivationCode] = useState('');
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [firstPassword, setFirstPassword] = useState('');
+  const [firstPasswordConfirm, setFirstPasswordConfirm] = useState('');
   const [inviteNumber, setInviteNumber] = useState('');
-  const [inviteRole, setInviteRole] = useState('admin');
+  const [inviteRole, setInviteRole] = useState('clearance_officer');
   const [inviteOffice, setInviteOffice] = useState('');
   const [inviteBusy, setInviteBusy] = useState(false);
   const [invitePassword, setInvitePassword] = useState('');
@@ -52,11 +69,12 @@ export default function App() {
   const currentPath = window.location.pathname.replace(/\/$/, '') || '/';
   const isAcceptRoute = currentPath === '/accept-invite';
   const isStudentRoute = currentPath === '/student';
+  const isProvostRoute = currentPath === '/provost';
 
   const loadStaffContext = useCallback(async (currentSession: Session) => {
     setBusy(true); setError('');
     const userId = currentSession.user.id;
-    const { data: profile, error: profileError } = await supabase.from('staff_profiles').select('user_id, full_name, email, staff_number, active').eq('user_id', userId).maybeSingle();
+    const { data: profile, error: profileError } = await supabase.from('staff_profiles').select('user_id, full_name, username, email, staff_number, must_change_password, active').eq('user_id', userId).maybeSingle();
     if (profileError || !profile || !profile.active) {
       await supabase.auth.signOut(); setSession(null); setStaff(null);
       setError('This account is not an active staff account. Contact the platform SuperAdmin.'); setBusy(false); return;
@@ -66,7 +84,7 @@ export default function App() {
       await supabase.auth.signOut(); setSession(null); setStaff(null);
       setError('This account has no active platform role. Contact the platform SuperAdmin.'); setBusy(false); return;
     }
-    setSession(currentSession); setStaff({ profile: profile as StaffProfile, roles: assignments as RoleAssignment[] }); setBusy(false);
+    setSession(currentSession); setStaff({ profile: profile as StaffProfile, roles: assignments as RoleAssignment[] }); setMustChangePassword(Boolean((profile as StaffProfile).must_change_password)); setBusy(false);
   }, []);
 
   useEffect(() => {
@@ -156,7 +174,7 @@ export default function App() {
     setStaffLoading(false);
     if (invokeError) { setStaffError(await describeFunctionError(invokeError, 'list-staff', 'Could not load staff records.')); return; }
     if (data?.error) { setStaffError(String(data.error)); return; }
-    setStaffRows((data?.staff ?? []) as StaffRow[]); setOffices((data?.offices ?? []) as Office[]);
+    setStaffRows((data?.staff ?? []) as StaffRow[]); setOffices((data?.offices ?? []) as Office[]); setDepartments((data?.departments ?? []) as Department[]);
   }, [session, isSuperAdmin]);
 
   useEffect(() => {
@@ -167,7 +185,9 @@ export default function App() {
     event.preventDefault();
     if (!envReady) { setError('Setup is incomplete. Add the Supabase project URL and public anon key to .env.local.'); return; }
     setSubmitting(true); setError(''); setNotice('');
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    const identifier = email.trim().toLowerCase();
+    const loginEmail = identifier.includes('@') ? identifier : `${identifier}@staff.dscp.invalid`;
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
     setSubmitting(false);
     if (signInError) { setError('Sign-in failed. Check the email and password, then try again.'); return; }
     if (data.session) await loadStaffContext(data.session);
@@ -181,10 +201,10 @@ export default function App() {
 
   async function handleInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setInviteBusy(true); setStaffError(''); setNotice('');
-    const needsOffice = inviteRole === 'clearance_officer' || inviteRole === 'unit_head';
+    const needsOffice = ['clearance_officer', 'unit_head', 'head_of_department'].includes(inviteRole);
     const { data, error: invokeError } = await supabase.functions.invoke('invite-staff', { body: {
-      full_name: inviteName.trim(), email: inviteEmail.trim(), staff_number: inviteNumber.trim() || null,
-      role: inviteRole, office_id: needsOffice ? (inviteOffice || null) : null,
+      full_name: inviteName.trim(), username: inviteUsername.trim().toLowerCase(), staff_number: inviteNumber.trim() || null,
+      role: inviteRole, office_id: needsOffice ? (inviteOffice || null) : null, department_id: inviteRole === 'head_of_department' ? (inviteDepartment || null) : null,
     } });
     setInviteBusy(false);
     if (invokeError || data?.error || !data?.success) {
@@ -194,8 +214,9 @@ export default function App() {
       setStaffError(message);
       return;
     }
-    setNotice(`Invitation sent to ${inviteEmail.trim()}. Ask the staff member to check their inbox.`);
-    setInviteName(''); setInviteEmail(''); setInviteNumber(''); setInviteRole('clearance_officer'); setInviteOffice('');
+    setActivationCode(String(data.activation_code ?? ''));
+    setNotice(`Staff account created for ${inviteUsername.trim()}. Give the activation code to the officer securely; it is shown only once.`);
+    setInviteName(''); setInviteUsername(''); setInviteNumber(''); setInviteRole('clearance_officer'); setInviteOffice(''); setInviteDepartment('');
     await loadStaffList();
   }
 
@@ -232,6 +253,19 @@ export default function App() {
     await loadStaffList();
   }
 
+  async function handleFirstPasswordChange(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setError(''); setNotice('');
+    if (firstPassword.length < 8) { setError('Use at least 8 characters for your new password.'); return; }
+    if (firstPassword !== firstPasswordConfirm) { setError('The passwords do not match.'); return; }
+    setAcceptBusy(true);
+    const { data, error: completeError } = await supabase.functions.invoke('complete-staff-setup', { body: { new_password: firstPassword } });
+    setAcceptBusy(false);
+    if (completeError || data?.error || !data?.success) { setError('Password changed, but account setup could not be finalized. Sign in again or contact SuperAdmin.'); return; }
+    setMustChangePassword(false); setFirstPassword(''); setFirstPasswordConfirm('');
+    if (session) await loadStaffContext(session);
+    setNotice('Password changed successfully.');
+  }
+
   async function handleAcceptInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setNotice('');
     if (!session) { setError('Invitation session is missing or expired. Reopen the latest invitation email.'); return; }
@@ -247,24 +281,31 @@ export default function App() {
 
   if (isStudentRoute) return <StudentPortal />;
 
+  if (session && mustChangePassword) {
+    return <main className="auth-layout"><section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">SECURE STAFF ACCESS</p><h1>Set your new password.</h1><p>Your activation code is temporary. Change it before continuing to your workspace.</p></div></section><section className="form-panel"><form className="login-card" onSubmit={handleFirstPasswordChange}><p className="eyebrow dark">FIRST LOGIN</p><h2>Change password</h2>{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="first-password">New password</label><input id="first-password" type="password" autoComplete="new-password" value={firstPassword} onChange={(e) => setFirstPassword(e.target.value)} minLength={8} required /><label htmlFor="first-password-confirm">Confirm new password</label><input id="first-password-confirm" type="password" autoComplete="new-password" value={firstPasswordConfirm} onChange={(e) => setFirstPasswordConfirm(e.target.value)} minLength={8} required /><button className="primary-button" type="submit" disabled={acceptBusy}>{acceptBusy ? 'Updating password...' : 'Change password and continue'}<span aria-hidden="true">→</span></button></form></section></main>;
+  }
+
   if (isAcceptRoute) {
     return <main className="auth-layout"><section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Set up your staff access.</h1><p>Choose a strong password to activate your invited staff account.</p></div><p className="panel-footnote">Authorised personnel only · Activity may be audited</p></section><section className="form-panel"><form className="login-card" onSubmit={handleAcceptInvite}><p className="eyebrow dark">STAFF INVITATION</p><h2>Complete your account</h2><p className="muted">Use at least 8 characters. Keep your password private.</p>{!session && <div className="alert warning">No active invitation session was found. Open the newest invitation link from your email.</div>}{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} minLength={8} required /><label htmlFor="confirm-password">Confirm password</label><input id="confirm-password" type="password" autoComplete="new-password" value={invitePasswordConfirm} onChange={(e) => setInvitePasswordConfirm(e.target.value)} minLength={8} required /><button className="primary-button" type="submit" disabled={acceptBusy || !session}>{acceptBusy ? 'Saving password...' : 'Set password and continue'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => { window.location.href = '/'; }}>Back to staff sign in</button></form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section></main>;
   }
 
   if (!session || !staff) {
-    return <main className="auth-layout"><section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Clearance, without the paperwork.</h1><p>A secure staff portal for managing final-year student clearance and institutional approvals.</p></div><p className="panel-footnote">Authorised personnel only · Activity may be audited</p></section><section className="form-panel"><form className="login-card" onSubmit={handleSignIn}><p className="eyebrow dark">STAFF PORTAL</p><h2>Welcome back</h2><p className="muted">Sign in with your assigned staff account.</p>{!envReady && <div className="alert warning">Supabase configuration is missing. Set up <code>.env.local</code> before signing in.</div>}{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="email">Email address</label><input id="email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="staff@college.edu.ng" required /><label htmlFor="password">Password</label><input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" required /><button className="primary-button" type="submit" disabled={submitting || !envReady}>{submitting ? 'Signing in...' : 'Sign in securely'}<span aria-hidden="true">→</span></button><p className="security-note"><span className="shield">✓</span> No public registration. Staff accounts are provisioned by authorised administrators.</p><p className="security-note">Student? <a href="/student">Open the student portal</a>.</p></form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section></main>;
+    return <main className="auth-layout"><section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Clearance, without the paperwork.</h1><p>A secure staff portal for managing final-year student clearance and institutional approvals.</p></div><p className="panel-footnote">Authorised personnel only · Activity may be audited</p></section><section className="form-panel"><form className="login-card" onSubmit={handleSignIn}><p className="eyebrow dark">STAFF PORTAL</p><h2>Welcome back</h2><p className="muted">Sign in with your assigned staff account.</p>{!envReady && <div className="alert warning">Supabase configuration is missing. Set up <code>.env.local</code> before signing in.</div>}{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="email">Username or email</label><input id="email" type="text" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter your username" required /><label htmlFor="password">Password</label><input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" required /><button className="primary-button" type="submit" disabled={submitting || !envReady}>{submitting ? 'Signing in...' : 'Sign in securely'}<span aria-hidden="true">→</span></button><p className="security-note"><span className="shield">✓</span> No public registration. Staff accounts are provisioned by authorised administrators.</p><p className="security-note">Student? <a href="/student">Open the student portal</a>.</p></form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section></main>;
   }
 
+  if (isProvostRoute) return <ProvostPortal fullName={staff.profile.full_name} email={staff.profile.email || session.user.email || null} hasProvostRole={activeRoles.some((item) => item.role === 'provost')} onSignOut={() => void handleSignOut()} />;
+
   return <main className="dashboard-layout"><header className="topbar"><div className="brand-lockup"><div className="brand-mark small">COHT</div><span>Digital Clearance</span></div><button className="secondary-button" onClick={handleSignOut}>Sign out</button></header><section className="welcome-block"><p className="eyebrow dark">STAFF WORKSPACE</p><h1>Welcome, {staff.profile.full_name}</h1><p className="muted">Your account is authenticated and your active role assignment has been loaded.</p></section>{activeRoles.some((item) => item.role === 'provost') && <p><a className="secondary-button" href="/provost">Open dedicated Provost portal</a></p>}{error && <div className="alert error dashboard-alert" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}
-    <section className="content-grid"><article className="panel account-panel"><div className="panel-heading"><div><p className="eyebrow dark">ACCOUNT STATUS</p><h2>Staff profile</h2></div><span className="status-pill"><span /> Active</span></div><dl className="details-list"><div><dt>Full name</dt><dd>{staff.profile.full_name}</dd></div><div><dt>Email</dt><dd>{staff.profile.email || session.user.email || 'Not set'}</dd></div><div><dt>Staff number</dt><dd>{staff.profile.staff_number || 'Not assigned'}</dd></div><div><dt>Account ID</dt><dd className="uuid">{staff.profile.user_id}</dd></div></dl></article><article className="panel roles-panel"><div className="panel-heading"><div><p className="eyebrow dark">PERMISSIONS</p><h2>Your active roles</h2></div><span className="role-count">{activeRoles.length}</span></div><div className="role-list">{activeRoles.map((item) => <div className="role-item" key={`${item.role}-${item.office_id ?? 'global'}`}><span className="role-icon">✓</span><div><strong>{roleLabels[item.role] ?? item.role}</strong><small>{item.office_id ? `Office assignment · ${item.office_id}` : 'Platform-wide role assignment'}</small></div><span className="role-active">Active</span></div>)}</div><div className="next-step-note"><strong>{isSuperAdmin ? 'SuperAdmin controls enabled' : 'Restricted staff workspace'}</strong><p>{isSuperAdmin ? 'You can invite staff, manage roles, deactivate accounts, and permanently delete staff records. Every change is checked by server-side authorization and audited.' : 'Your workspace is limited to the permissions assigned to your account.'}</p></div></article></section>
+    <section className="content-grid"><article className="panel account-panel"><div className="panel-heading"><div><p className="eyebrow dark">ACCOUNT STATUS</p><h2>Staff profile</h2></div><span className="status-pill"><span /> Active</span></div><dl className="details-list"><div><dt>Full name</dt><dd>{staff.profile.full_name}</dd></div><div><dt>Username</dt><dd>{staff.profile.username || staff.profile.email || session.user.email || 'Not set'}</dd></div><div><dt>Staff number</dt><dd>{staff.profile.staff_number || 'Not assigned'}</dd></div><div><dt>Account ID</dt><dd className="uuid">{staff.profile.user_id}</dd></div></dl></article><article className="panel roles-panel"><div className="panel-heading"><div><p className="eyebrow dark">PERMISSIONS</p><h2>Your active roles</h2></div><span className="role-count">{activeRoles.length}</span></div><div className="role-list">{activeRoles.map((item) => <div className="role-item" key={`${item.role}-${item.office_id ?? 'global'}`}><span className="role-icon">✓</span><div><strong>{roleLabels[item.role] ?? item.role}</strong><small>{item.department_name ? `Department · ${item.department_name}` : item.office_id ? `Office assignment · ${item.office_id}` : 'Platform-wide role assignment'}</small></div><span className="role-active">Active</span></div>)}</div><div className="next-step-note"><strong>{isSuperAdmin ? 'SuperAdmin controls enabled' : 'Restricted staff workspace'}</strong><p>{isSuperAdmin ? 'You can invite staff, manage roles, deactivate accounts, and permanently delete staff records. Every change is checked by server-side authorization and audited.' : 'Your workspace is limited to the permissions assigned to your account.'}</p></div></article></section>
+    {activeRoles.some((item) => ['superadmin','admin','clearance_officer','unit_head','head_of_department','provost','registrar'].includes(item.role)) && <OfficeClearance roles={activeRoles.map((item) => item.role)} />}
     {isSuperAdmin && <InstitutionalSetup />}
     {isSuperAdmin && <ClearanceRequirements />}
     {isSuperAdmin && <StudentImport />}
     {(activeRoles.some((item) => item.role === 'admin') || isSuperAdmin) && <StudentAccessTools canManageStudents={activeRoles.some((item) => item.role === 'admin') && !isSuperAdmin} canManageSupport={isSuperAdmin} />}
     {isSuperAdmin && <section className="management-section"><div className="section-title"><div><p className="eyebrow dark">PLATFORM ADMINISTRATION</p><h2>Staff management</h2><p className="muted">Invite authorised staff and manage account access. SuperAdmin assignment is intentionally excluded from this form.</p></div><button className="secondary-button" onClick={() => void loadStaffList()} disabled={staffLoading}>{staffLoading ? 'Refreshing...' : 'Refresh list'}</button></div>
       {staffError && <div className="alert error" role="alert">{staffError}</div>}
-      <div className="management-grid"><article className="panel"><div className="panel-heading"><div><p className="eyebrow dark">NEW ACCOUNT</p><h2>Invite a staff member</h2></div></div><form className="management-form" onSubmit={handleInvite}><label htmlFor="invite-name">Full name</label><input id="invite-name" value={inviteName} onChange={(e) => setInviteName(e.target.value)} maxLength={160} required /><label htmlFor="invite-email">Email address</label><input id="invite-email" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required /><label htmlFor="invite-number">Staff number <span className="optional">Optional</span></label><input id="invite-number" value={inviteNumber} onChange={(e) => setInviteNumber(e.target.value)} maxLength={80} /><label htmlFor="invite-role">Role</label><select id="invite-role" value={inviteRole} onChange={(e) => { setInviteRole(e.target.value); setInviteOffice(''); }} required>{assignableRoles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select>{(inviteRole === 'clearance_officer' || inviteRole === 'unit_head') && <><label htmlFor="invite-office">Clearance office</label><select id="invite-office" value={inviteOffice} onChange={(e) => setInviteOffice(e.target.value)} disabled={staffLoading} required><option value="">Select an active office</option>{offices.filter((office) => office.active).map((office) => <option key={office.id} value={office.id}>{office.name} ({office.code})</option>)}</select>{staffLoading && offices.length === 0 ? <p className="field-note">Loading active offices...</p> : offices.filter((office) => office.active).length === 0 && <p className="field-note">No active offices were returned. Add/configure offices before inviting office-scoped staff.</p>}</>}<button className="primary-button" type="submit" disabled={inviteBusy || (['clearance_officer','unit_head'].includes(inviteRole) && !inviteOffice)}>{inviteBusy ? 'Sending invitation...' : 'Send staff invitation'}<span aria-hidden="true">→</span></button><p className="field-note">An invitation email is sent. The recipient sets their password on the secure acceptance page.</p></form></article>
-      <article className="panel staff-directory"><div className="panel-heading"><div><p className="eyebrow dark">CURRENT ACCOUNTS</p><h2>Staff directory</h2></div><span className="role-count">{staffRows.length}</span></div>{staffLoading ? <p className="muted">Loading staff directory...</p> : staffRows.length === 0 ? <p className="muted">No staff records returned.</p> : <div className="staff-table-wrap"><table className="staff-table"><thead><tr><th>Staff member</th><th>Role / office</th><th>Status</th><th>Action</th></tr></thead><tbody>{staffRows.map((row) => <tr key={row.user_id}><td><strong>{row.full_name}</strong><small>{row.email || 'No email'}{row.staff_number ? ` · ${row.staff_number}` : ''}</small></td><td>{row.roles.filter((r) => r.active).map((r, i) => <span className="staff-role-chip" key={`${r.role}-${r.office_id}-${i}`}>{roleLabels[r.role] ?? r.role}{r.office_name ? ` · ${r.office_name}` : ''}</span>)}</td><td><span className={`directory-status ${row.status}`}>{statusLabels[row.status]}</span></td><td><div className="directory-actions">{row.user_id === session.user.id ? <small className="muted">Current account</small> : <>{row.status !== 'missing' && row.status !== 'inactive' && <button className="danger-button" onClick={() => setTargetToDeactivate(row)} disabled={Boolean(deletingId)}>Deactivate</button>}<button className="danger-button" onClick={() => setTargetToDelete(row)} disabled={Boolean(deletingId)}>Delete</button></>}</div></td></tr>)}</tbody></table></div>}<p className="field-note">Deactivation blocks sign-in and disables the profile and all active roles. Deleting a staff account permanently removes its Auth login, staff profile, and role assignments, frees the email for a new invitation, and retains completed clearance and audit history. Both actions are audited.</p></article></div></section>}
+      <div className="management-grid"><article className="panel"><div className="panel-heading"><div><p className="eyebrow dark">NEW ACCOUNT</p><h2>Create staff account</h2></div></div><form className="management-form" onSubmit={handleInvite}><label htmlFor="invite-name">Full name</label><input id="invite-name" value={inviteName} onChange={(e) => setInviteName(e.target.value)} maxLength={160} required /><label htmlFor="invite-username">Username</label><input id="invite-username" value={inviteUsername} onChange={(e) => setInviteUsername(e.target.value)} minLength={3} maxLength={40} pattern="[A-Za-z0-9._-]+" autoComplete="off" required /><label htmlFor="invite-number">Staff number <span className="optional">Optional</span></label><input id="invite-number" value={inviteNumber} onChange={(e) => setInviteNumber(e.target.value)} maxLength={80} /><label htmlFor="invite-role">Role</label><select id="invite-role" value={inviteRole} onChange={(e) => { setInviteRole(e.target.value); setInviteOffice(''); }} required>{assignableRoles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select>{inviteRole === 'head_of_department' && <><label htmlFor="invite-department">Department</label><select id="invite-department" value={inviteDepartment} onChange={(e) => setInviteDepartment(e.target.value)} required><option value="">Select department</option>{departments.filter((department) => department.active).map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></>}{(['clearance_officer', 'unit_head', 'head_of_department'].includes(inviteRole)) && <><label htmlFor="invite-office">Clearance office</label><select id="invite-office" value={inviteOffice} onChange={(e) => setInviteOffice(e.target.value)} disabled={staffLoading} required><option value="">Select an active office</option>{offices.filter((office) => office.active).map((office) => <option key={office.id} value={office.id}>{office.name} ({office.code})</option>)}</select>{staffLoading && offices.length === 0 ? <p className="field-note">Loading active offices...</p> : offices.filter((office) => office.active).length === 0 && <p className="field-note">No active offices were returned. Add/configure offices before inviting office-scoped staff.</p>}</>}<button className="primary-button" type="submit" disabled={inviteBusy || (['clearance_officer','unit_head','head_of_department'].includes(inviteRole) && !inviteOffice) || (inviteRole === 'head_of_department' && !inviteDepartment)}>{inviteBusy ? 'Creating account...' : 'Create account'}<span aria-hidden="true">→</span></button><p className="field-note">A six-character activation code is generated automatically. The officer must change it to a new password on first login.</p>{activationCode && <div className="alert success"><strong>Activation code (shown once):</strong><p className="uuid">{activationCode}</p><button className="secondary-button" type="button" onClick={() => void navigator.clipboard.writeText(activationCode)}>Copy activation code</button></div>}</form></article>
+      <article className="panel staff-directory"><div className="panel-heading"><div><p className="eyebrow dark">CURRENT ACCOUNTS</p><h2>Staff directory</h2></div><span className="role-count">{staffRows.length}</span></div>{staffLoading ? <p className="muted">Loading staff directory...</p> : staffRows.length === 0 ? <p className="muted">No staff records returned.</p> : <div className="staff-table-wrap"><table className="staff-table"><thead><tr><th>Staff member</th><th>Role / office</th><th>Status</th><th>Action</th></tr></thead><tbody>{staffRows.map((row) => <tr key={row.user_id}><td><strong>{row.full_name}</strong><small>{row.username ? `@${row.username}` : (row.email || 'No email')}{row.staff_number ? ` · ${row.staff_number}` : ''}</small></td><td>{row.roles.filter((r) => r.active).map((r, i) => <span className="staff-role-chip" key={`${r.role}-${r.office_id}-${i}`}>{roleLabels[r.role] ?? r.role}{r.office_name ? ` · ${r.office_name}` : ''}{r.department_name ? ` · ${r.department_name}` : ''}</span>)}</td><td><span className={`directory-status ${row.status}`}>{statusLabels[row.status]}</span></td><td><div className="directory-actions">{row.user_id === session.user.id ? <small className="muted">Current account</small> : <>{row.status !== 'missing' && row.status !== 'inactive' && <button className="danger-button" onClick={() => setTargetToDeactivate(row)} disabled={Boolean(deletingId)}>Deactivate</button>}<button className="danger-button" onClick={() => setTargetToDelete(row)} disabled={Boolean(deletingId)}>Delete</button></>}</div></td></tr>)}</tbody></table></div>}<p className="field-note">Deactivation blocks sign-in and disables the profile and all active roles. Deleting a staff account permanently removes its Auth login, staff profile, and role assignments, frees the email for a new invitation, and retains completed clearance and audit history. Both actions are audited.</p></article></div></section>}
     <p className="dashboard-footnote">Restricted staff workspace · Browser clients do not perform direct database writes.</p>
     {targetToDeactivate && <div className="modal-backdrop" role="presentation"><section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="deactivate-title"><p className="eyebrow dark">CONFIRM ACCOUNT CHANGE</p><h2 id="deactivate-title">Deactivate {targetToDeactivate.full_name}?</h2><p>This blocks the account from signing in and disables every active role assignment. This action is audited.</p><label htmlFor="deactivation-reason">Reason <span className="optional">Optional</span></label><textarea id="deactivation-reason" value={deactivationReason} onChange={(e) => setDeactivationReason(e.target.value)} maxLength={500} rows={3} placeholder="Reason for the audit record"/><div className="modal-actions"><button className="secondary-button" onClick={() => { setTargetToDeactivate(null); setDeactivationReason(''); }} disabled={Boolean(deactivatingId)}>Cancel</button><button className="danger-button solid" onClick={() => void confirmDeactivation()} disabled={Boolean(deactivatingId)}>{deactivatingId ? 'Deactivating...' : 'Confirm deactivation'}</button></div></section></div>}
     {targetToDelete && <div className="modal-backdrop" role="presentation"><section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title"><p className="eyebrow dark">PERMANENT ACCOUNT DELETION</p><h2 id="delete-title">Delete {targetToDelete.full_name}?</h2><p>This permanently removes the Auth login, staff profile, and role assignments for <strong>{targetToDelete.email || targetToDelete.full_name}</strong>. The email becomes available for a new invitation. Completed clearance records and audit history are retained.</p><div className="modal-actions"><button className="secondary-button" onClick={() => setTargetToDelete(null)} disabled={Boolean(deletingId)}>Cancel</button><button className="danger-button solid" onClick={() => void confirmDelete()} disabled={Boolean(deletingId)}>{deletingId ? 'Deleting...' : 'Delete permanently'}</button></div></section></div>}
