@@ -235,5 +235,5 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Deployed `manage-clearance-requirements` as ACTIVE version 1 with JWT verification enabled. The shared CORS logic is bundled into the deployed entrypoint.
 - Verified RPC execute permissions: `anon=false`, `authenticated=false`, `service_role=true`.
 - No clearance requirements were created or enabled. Existing active session, payment gate, and Administrator payment-only permissions were not changed.
-- Follow-up hardening: added `manage-clearance-requirements/index.ts` to the Deno check in `.github/workflows/validate.yml` (commit `5686cd5867d0d2f3a7ac3102b7c15724dec46124`). The new CI run must pass before marking the Edge Function source type-check verified; the earlier passing run did not include this function.
+- Follow-up hardening: added `manage-clearance-requirements/index.ts` to the Deno check in `.github/workflows/validate.yml` (commit `5686cd5867d0d2f3a7ac3102b7c15724dec46124`). The updated CI run passed, including the new function: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40224309998.
 - Still required: verify the latest CI run, then test the SuperAdmin panel in production using the college's actual configuration decisions. Do not enable requirements until the college confirms the approved offices/requirements and scope.
