@@ -267,3 +267,12 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - SuperAdmin no longer mounts the clearance workflow component, including when a SuperAdmin account has another role assigned. The database workflow exclusion from migration `20261025211257_20261025210000_superadmin_clearance_request_isolation` remains the server-side safeguard.
 - Removed the **OFFICE QUEUE** eyebrow label; the Requests heading and assigned-staff request workflow remain.
 - Scope is limited to `src/App.tsx`, `src/components/OfficeClearance.tsx`, and `supabase/functions/reset-staff-activation-code/index.ts`. The `reset-staff-activation-code` Edge Function is deployed ACTIVE v1 with `verify_jwt=true`. A production SQL check confirmed SuperAdmin sees 0 requests while other active staff see 10 requests in total. Source checks confirm the SuperAdmin queue guard, activation-code UI, and removal of the `OFFICE QUEUE` label are present on `main`. Frontend build/Cloudflare deployment and a real browser reset-flow test were not independently confirmed in this session; verify these before claiming the UI changes are live.
+
+
+## Dashboard account-status and permissions layout — 2026-10-25
+
+- Removed the staff dashboard's opening Account Status and Permissions cards. Account status, staff identifiers, active role assignments, and the permissions reminder now appear as plain text in the dashboard footer.
+- Removed the student dashboard's opening Student Particulars / Account Verified card. Student account status and particulars now appear as plain text in its footer; clearance-session and requirements workflow remains unchanged.
+- Removed the Provost dashboard's opening profile and approval-safeguard cards. Account status, Final Assent authority, and the server-validated permission rule now appear as plain text in its footer.
+- Added footer-only styling with a top divider and no card/box background, border container, or shadow. No authentication, authorization, clearance workflow, payment logic, or database code was changed.
+- Branch: `ui/dashboard-account-details-footer`. Build/CI, merge, Cloudflare deployment, and browser verification remain pending.
