@@ -9,22 +9,24 @@ import StudentPortal from './components/StudentPortal';
 import StudentImport from './components/StudentImport';
 import StudentAccessTools from './components/StudentAccessTools';
 
-type StaffProfile = { user_id: string; full_name: string; email: string | null; staff_number: string | null; active: boolean; created_at?: string };
-type RoleAssignment = { role: string; office_id: string | null; active: boolean; office_name?: string | null };
+type StaffProfile = { user_id: string; full_name: string; username?: string | null; email: string | null; staff_number: string | null; must_change_password?: boolean; active: boolean; created_at?: string };
+type RoleAssignment = { role: string; office_id: string | null; department_id?: string | null; active: boolean; office_name?: string | null; department_name?: string | null };
 type StaffContext = { profile: StaffProfile; roles: RoleAssignment[] };
 type Office = { id: string; code: string; name: string; active: boolean };
+type Department = { id: string; code: string | null; name: string; active: boolean };
 type StaffStatus = 'active' | 'invited' | 'inactive' | 'missing';
 type StaffRow = StaffProfile & { roles: RoleAssignment[]; status: StaffStatus; invited_at: string | null; email_confirmed_at: string | null };
 
 const roleLabels: Record<string, string> = {
   superadmin: 'Super Administrator', admin: 'Administrator', clearance_officer: 'Clearance Officer',
-  unit_head: 'Unit Head', registrar: 'Registrar', provost: 'Provost', certification_officer: 'Certification Officer',
+  unit_head: 'Unit Head', head_of_department: 'Head of Department', registrar: 'Registrar', provost: 'Provost', certification_officer: 'Certification Officer',
 };
 const statusLabels: Record<StaffStatus, string> = { active: 'Active', invited: 'Invited', inactive: 'Inactive', missing: 'Login missing' };
 const assignableRoles = [
   { value: 'admin', label: 'Administrator' },
   { value: 'clearance_officer', label: 'Clearance Officer' },
   { value: 'unit_head', label: 'Unit Head' },
+  { value: 'head_of_department', label: 'Head of Department' },
   { value: 'registrar', label: 'Registrar' },
   { value: 'provost', label: 'Provost' },
   { value: 'certification_officer', label: 'Certification Officer' },
@@ -41,10 +43,16 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [staffRows, setStaffRows] = useState<StaffRow[]>([]);
   const [offices, setOffices] = useState<Office[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [staffLoading, setStaffLoading] = useState(false);
   const [staffError, setStaffError] = useState('');
   const [inviteName, setInviteName] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteUsername, setInviteUsername] = useState('');
+  const [inviteDepartment, setInviteDepartment] = useState('');
+  const [activationCode, setActivationCode] = useState('');
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [firstPassword, setFirstPassword] = useState('');
+  const [firstPasswordConfirm, setFirstPasswordConfirm] = useState('');
   const [inviteNumber, setInviteNumber] = useState('');
   const [inviteRole, setInviteRole] = useState('clearance_officer');
   const [inviteOffice, setInviteOffice] = useState('');
@@ -65,7 +73,7 @@ export default function App() {
   const loadStaffContext = useCallback(async (currentSession: Session) => {
     setBusy(true); setError('');
     const userId = currentSession.user.id;
-    const { data: profile, error: profileError } = await supabase.from('staff_profiles').select('user_id, full_name, email, staff_number, active').eq('user_id', userId).maybeSingle();
+    const { data: profile, error: profileError } = await supabase.from('staff_profiles').select('user_id, full_name, username, email, staff_number, must_change_password, active').eq('user_id', userId).maybeSingle();
     if (profileError || !profile || !profile.active) {
       await supabase.auth.signOut(); setSession(null); setStaff(null);
       setError('This account is not an active staff account. Contact the platform SuperAdmin.'); setBusy(false); return;
@@ -75,7 +83,7 @@ export default function App() {
       await supabase.auth.signOut(); setSession(null); setStaff(null);
       setError('This account has no active platform role. Contact the platform SuperAdmin.'); setBusy(false); return;
     }
-    setSession(currentSession); setStaff({ profile: profile as StaffProfile, roles: assignments as RoleAssignment[] }); setBusy(false);
+    setSession(currentSession); setStaff({ profile: profile as StaffProfile, roles: assignments as RoleAssignment[] }); setMustChangePassword(Boolean((profile as StaffProfile).must_change_password)); setBusy(false);
   }, []);
 
   useEffect(() => {
@@ -165,7 +173,7 @@ export default function App() {
     setStaffLoading(false);
     if (invokeError) { setStaffError(await describeFunctionError(invokeError, 'list-staff', 'Could not load staff records.')); return; }
     if (data?.error) { setStaffError(String(data.error)); return; }
-    setStaffRows((data?.staff ?? []) as StaffRow[]); setOffices((data?.offices ?? []) as Office[]);
+    setStaffRows((data?.staff ?? []) as StaffRow[]); setOffices((data?.offices ?? []) as Office[]); setDepartments((data?.departments ?? []) as Department[]);
   }, [session, isSuperAdmin]);
 
   useEffect(() => {
@@ -176,7 +184,9 @@ export default function App() {
     event.preventDefault();
     if (!envReady) { setError('Setup is incomplete. Add the Supabase project URL and public anon key to .env.local.'); return; }
     setSubmitting(true); setError(''); setNotice('');
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    const identifier = email.trim().toLowerCase();
+    const loginEmail = identifier.includes('@') ? identifier : `${identifier}@staff.dscp.invalid`;
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
     setSubmitting(false);
     if (signInError) { setError('Sign-in failed. Check the email and password, then try again.'); return; }
     if (data.session) await loadStaffContext(data.session);
