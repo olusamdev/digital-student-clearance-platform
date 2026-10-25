@@ -155,7 +155,9 @@ Deno.serve(async (req) => {
   }
 
   const reference = "DSCP-" + crypto.randomUUID();
-  const callbackUrl = Deno.env.get("PAYSTACK_CALLBACK_URL") || "https://dscp.olusamdev.workers.dev/student";
+  const callbackUrl = adminInitiated
+    ? `${origin || "https://dscp.olusamdev.workers.dev"}/?payment=success`
+    : Deno.env.get("PAYSTACK_CALLBACK_URL") || "https://dscp.olusamdev.workers.dev/student";
   const paystackResponse = await fetch("https://api.paystack.co/transaction/initialize", {
     method: "POST",
     headers: { Authorization: "Bearer " + secret, "Content-Type": "application/json" },
