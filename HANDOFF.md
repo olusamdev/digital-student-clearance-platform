@@ -276,3 +276,12 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Removed the Provost dashboard's opening profile and approval-safeguard cards. Account status, Final Assent authority, and the server-validated permission rule now appear as plain text in its footer.
 - Added footer-only styling with a top divider and no card/box background, border container, or shadow. No authentication, authorization, clearance workflow, payment logic, or database code was changed.
 - Branch: `ui/dashboard-account-details-footer`. Build/CI, merge, Cloudflare deployment, and browser verification remain pending.
+
+
+## SuperAdmin dashboard section navigation — 2026-10-25
+
+- Replaced the long SuperAdmin dashboard stack with horizontally arranged navigation pills: Activities, Institutional setup, Clearance requirements, Import student records, Student payment and account assistance, and Staff management.
+- Activities is the default selected section and currently displays a placeholder only; its function remains intentionally undefined until specified.
+- Only the selected SuperAdmin section mounts. Existing components, handlers, authorization conditions, and workflows are preserved behind their respective section selection.
+- Non-SuperAdmin staff/admin dashboard routing is unchanged. The staff account-status and permissions footer is positioned after dashboard content rather than above it.
+- Branch: `ui/superadmin-section-navigation`. Build/CI, merge, deployment, and browser verification pending.
