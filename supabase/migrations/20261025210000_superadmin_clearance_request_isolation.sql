@@ -200,6 +200,10 @@ BEGIN
       'completed_queue', v_completed_queue
     );
   ELSIF p_action IN ('clear', 'comment') THEN
+    IF EXISTS (SELECT 1 FROM public.staff_role_assignments ra
+               WHERE ra.user_id=p_actor_user_id AND ra.active=true AND ra.role='superadmin') THEN
+      RAISE EXCEPTION 'SuperAdmin accounts cannot process clearance requests' USING ERRCODE = '42501';
+    END IF;
     v_request_id := NULLIF(p_payload->>'request_id','')::uuid;
     IF v_request_id IS NULL THEN RAISE EXCEPTION 'Clearance request is required'; END IF;
 
