@@ -68,3 +68,7 @@
 .clearance-notification small{font-size:10px;color:#7d887f}
 
 
+
+
+/* Account status and permissions are plain dashboard footer information, never opening cards. */
+.dashboard-account-footer{display:grid;gap:8px;margin-top:30px;padding:18px 0 0;border-top:1px solid #e0e6df;color:#6f7d71;font-size:11px;line-height:1.8;overflow-wrap:anywhere}.dashboard-account-footer strong{color:#405748;font-weight:700}.dashboard-account-footer p{margin:0}.dashboard-account-footer .footer-separator{padding:0 4px;color:#a1aaa2}.dashboard-account-footer .field-note{margin:0;font-size:11px}@media(max-width:600px){.dashboard-account-footer{font-size:10px;line-height:1.9}}
