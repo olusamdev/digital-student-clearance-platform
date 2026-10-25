@@ -53,6 +53,56 @@ Deno.serve(async req => {
       return respond({ success: true, whatsapp: str(data?.setting_value, 40) }, 200, origin);
     }
 
+    if (action === "complete_student_activation") {
+      const registrationNumber = reg(p.registration_number);
+      const password = typeof p.password === "string" ? p.password : "";
+      if (!registrationNumber || password.length < 8) return respond({ error: "Enter your registration number and a password of at least 8 characters." }, 400, origin);
+      const { data: student, error: studentError } = await db.from("student_records")
+        .select("id,registration_number,auth_user_id").eq("registration_number", registrationNumber).maybeSingle();
+      if (studentError) return respond({ error: "Could not verify the student record." }, 500, origin);
+      if (!student) return respond({ error: "Student record not found." }, 404, origin);
+      if (student.auth_user_id) return respond({ error: "This account is already activated. Contact an administrator if you cannot sign in." }, 409, origin);
+      const { data: sessions, error: sessionsError } = await db.from("clearance_sessions")
+        .select("id,opens_at,closes_at").eq("active", true);
+      if (sessionsError) return respond({ error: "Could not verify the clearance session." }, 500, origin);
+      const nowMs = Date.now();
+      const currentSessionIds = (sessions ?? []).filter((session: any) =>
+        (!session.opens_at || new Date(session.opens_at).getTime() <= nowMs) &&
+        (!session.closes_at || new Date(session.closes_at).getTime() >= nowMs)
+      ).map((session: any) => session.id);
+      if (!currentSessionIds.length) return respond({ error: "There is no open clearance session for account activation." }, 402, origin);
+      const { data: links, error: linksError } = await db.from("session_students")
+        .select("id,session_id,payment_unlocked_at").eq("student_id", student.id)
+        .in("session_id", currentSessionIds).not("payment_unlocked_at", "is", null);
+      if (linksError) return respond({ error: "Could not verify the clearance payment." }, 500, origin);
+      if (!links?.length) return respond({ error: "A verified payment for the active clearance session is required before account activation." }, 402, origin);
+      const { data: payments, error: paymentsError } = await db.from("payment_transactions")
+        .select("id,payment_mode,status,created_at").in("session_student_id", links.map((link: any) => link.id))
+        .eq("status", "successful").eq("payment_mode", "student_initiated")
+        .order("created_at", { ascending: false }).limit(1);
+      if (paymentsError) return respond({ error: "Could not verify how the clearance fee was paid." }, 500, origin);
+      if (!payments?.length) return respond({ error: "This payment requires a college-issued activation code. Contact the college administrator." }, 403, origin);
+      const email = await internalEmail(student.registration_number);
+      const now = new Date().toISOString();
+      const { data: created, error: createError } = await db.auth.admin.createUser({
+        email, password, email_confirm: true,
+        user_metadata: { registration_number: student.registration_number, account_type: "student" },
+      });
+      if (createError || !created.user) return respond({ error: "Account setup failed. Contact the college administrator for assistance." }, 500, origin);
+      const { data: linked, error: linkError } = await db.from("student_records").update({
+        auth_user_id: created.user.id, auth_email: email, account_setup_completed_at: now, updated_at: now,
+      }).eq("id", student.id).is("auth_user_id", null).select("id").maybeSingle();
+      if (linkError || !linked) {
+        await db.auth.admin.deleteUser(created.user.id);
+        return respond({ error: "Could not link the account safely. Contact the college." }, 409, origin);
+      }
+      await db.from("audit_events").insert({
+        actor_student_id: student.id, event_type: "student.account_activated", entity_type: "student_record",
+        entity_id: student.id, details: { registration_number: student.registration_number, activation_method: "student_initiated_payment" },
+      });
+      return respond({ success: true, activated: true, auth_email: email }, 200, origin);
+    }
+
     if (action === "complete_activation" || action === "complete_password_reset") {
       const registrationNumber = reg(p.registration_number), suppliedCode = str(p.code, 40).toUpperCase().replace(/[^A-Z0-9]/g, "");
       const password = typeof p.password === "string" ? p.password : "";
@@ -117,8 +167,8 @@ Deno.serve(async req => {
 
     if (action === "set_support_number") {
       if (!superAdmin) return respond({ error: "Only the SuperAdmin can change the support number." }, 403, origin);
-      const whatsapp = str(p.whatsapp, 40).replace(/[\\s()+.-]/g, "");
-      if (whatsapp && !/^\\d{10,15}$/.test(whatsapp)) return respond({ error: "Enter the WhatsApp number with country code, digits only." }, 400, origin);
+      const whatsapp = str(p.whatsapp, 40).replace(/[\s()+.-]/g, "");
+      if (whatsapp && !/^\d{10,15}$/.test(whatsapp)) return respond({ error: "Enter the WhatsApp number with country code, digits only." }, 400, origin);
       const { error } = await db.from("app_settings").upsert({ setting_key: "student_support_whatsapp", setting_value: whatsapp, updated_at: new Date().toISOString() }, { onConflict: "setting_key" });
       if (error) return respond({ error: "Could not save the support number." }, 500, origin);
       await db.from("audit_events").insert({ actor_student_id: null, event_type: "superadmin.student_support_number_changed", entity_type: "app_setting", entity_id: "student_support_whatsapp", details: { changed_by: actor.id, configured: Boolean(whatsapp) } });

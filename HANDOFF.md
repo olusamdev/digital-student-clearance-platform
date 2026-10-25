@@ -155,3 +155,11 @@ This update supersedes earlier statements that the latest student payment/accoun
 - GitHub Actions deployment run succeeded: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40191961324
 - Deployment targeted the existing Cloudflare Worker `dscp`, configured in `wrangler.jsonc`; no new Worker/site was created.
 - Frontend build and Cloudflare deploy steps both passed. Confirm the live UI in a browser after refreshing; do not infer feature-level correctness from deployment success alone.
+
+
+## 2026-10-25 — Correct student activation and WhatsApp validation
+- Student-initiated Paystack payment must lead directly to password creation without an activation code; admin-assisted payment still requires the single-use college-issued activation code.
+- Student portal lookup now returns whether a code is required based on the latest successful transaction for the active session. If no successful student-initiated transaction can be verified, code requirement defaults to true.
+- Added server-side `complete_student_activation`: code-free account creation is allowed only for a verified successful `student_initiated` payment linked to an active clearance session. Admin-assisted or manually recorded payments cannot use this path.
+- Fixed the SuperAdmin WhatsApp validator's over-escaped regex, which rejected ordinary digits-only numbers. It accepts 10–15 digits after removing common formatting; for Nigeria use country code, e.g. `2348012345678`.
+- Pending validation: build/type checks, deployment of updated Edge Functions, frontend deployment, and end-to-end retest of both payment paths.
