@@ -187,3 +187,11 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - CI initially caught two TypeScript comparisons left over from the removed activation-code branches. Those branches were simplified to password-reset-only logic; rerun validation against the latest branch head before merge.
 
 - Callback robustness: admin-assisted checkout uses a clean dashboard URL, allowing Paystack to append its reference parameters without a pre-existing query string. The dashboard verifies the reference only on `/`.
+
+
+## Production deployment — 2026-10-25
+
+- PR #4 and PR #5 are merged to `main`. GitHub validation passed.
+- Cloudflare deployment passed: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40199814367. The existing Worker `dscp` was updated.
+- DSCP Edge Functions are ACTIVE: `student-portal` v11 (`verify_jwt=true`), `student-payments` v5 (`verify_jwt=false`), and `manage-student-access` v4 (`verify_jwt=false`). Deployed sources were checked for code-free activation and the admin callback flow.
+- Browser end-to-end retest is still pending: complete a test-mode admin-assisted payment, confirm return to the staff dashboard with server-verified success, then look up the paid student's registration number at `/student` and confirm direct password setup without an activation code. Also confirm student-initiated payment and password-reset recovery still work.
