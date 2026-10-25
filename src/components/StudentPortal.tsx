@@ -363,12 +363,7 @@ export default function StudentPortal() {
       {loading && <div className="panel"><p className="muted">Loading your verified college record…</p></div>}
       {!loading && !dashboard && <div className="panel"><h2>Student record not available</h2><p className="muted">Your verified phone number could not be linked to a matching name and registration number, or no clearance session has been assigned. Check your details or contact the college clearance office.</p><button className="secondary-button" type="button" onClick={() => void loadDashboard()}>Try again</button></div>}
       {dashboard && <>
-        <section className="content-grid">
-          <article className="panel account-panel"><div className="panel-heading"><div><p className="eyebrow dark">OFFICIAL RECORD</p><h2>Student particulars</h2></div><span className="status-pill"><span /> Account verified</span></div>
-            <dl className="details-list"><div><dt>Registration number</dt><dd>{dashboard.student.registration_number}</dd></div><div><dt>Department</dt><dd>{dashboard.student.department || 'Not assigned'}</dd></div><div><dt>Programme</dt><dd>{dashboard.student.programme || 'Not assigned'}</dd></div><div><dt>Phone</dt><dd>{dashboard.student.phone_number || 'Verified sign-in phone'}</dd></div></dl>
-          </article>
-          
-        </section>
+
         {!dashboard.sessions.length && <div className="panel"><h2>No clearance session assigned</h2><p className="muted">Your college record is recognised, but an active clearance session has not been assigned yet. Contact the clearance administrator.</p></div>}
         {dashboard.sessions.map((item) => <section className="panel clearance-request-card" key={item.id}>
           <div className="clearance-card-header"><div><p className="eyebrow dark">CLEARANCE SESSION</p><h2>{item.academic_session || item.session_name}</h2><p className="clearance-reg">{dashboard.student.registration_number}</p></div><span className={`clearance-status status-${item.final_assent === 'assented' ? 'cleared' : item.final_assent === 'declined' ? 'needs_attention' : 'requested'}`}>{item.final_assent === 'assented' ? 'Completed' : item.final_assent === 'declined' ? 'Assent declined' : item.final_assent === 'revoked' ? 'Assent revoked' : item.active ? 'In progress' : 'Session closed'}</span></div>
@@ -380,7 +375,10 @@ export default function StudentPortal() {
           {item.final_assent !== 'assented' && <button className="primary-button" type="button" disabled={Boolean(busy) || !item.payment_unlocked_at || !item.profile_confirmed_at || !item.active} onClick={() => void requestClearance(item)}>{busy === 'request_clearance' ? 'Submitting…' : 'Submit clearance requests'}</button>}
         </section>)}
       </>}
-      <p className="dashboard-footnote">Student data is served through an authenticated, server-side access check.</p>
+      <footer className="dashboard-account-footer" aria-label="Student account status">
+        {dashboard && <><div><strong>Account status:</strong> Verified <span className="footer-separator">·</span> <strong>Student:</strong> {dashboard.student.full_name} <span className="footer-separator">·</span> <strong>Registration number:</strong> {dashboard.student.registration_number}</div><div><strong>Department:</strong> {dashboard.student.department || 'Not assigned'} <span className="footer-separator">·</span> <strong>Programme:</strong> {dashboard.student.programme || 'Not assigned'} <span className="footer-separator">·</span> <strong>Phone:</strong> {dashboard.student.phone_number || 'Verified sign-in phone'}</div></>}
+        <p className="dashboard-footnote">Student data is served through an authenticated, server-side access check.</p>
+      </footer>
     </main>
   );
 }
