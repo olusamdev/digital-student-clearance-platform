@@ -224,3 +224,16 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Added migration `supabase/migrations/202610250001_manage_clearance_requirements.sql`. It has NOT been applied to Supabase. No requirements were created or enabled.
 - Validation is incomplete: no local build or CI result yet. Do not merge/deploy or apply the migration until the PR is reviewed and validation passes. After merge approval, apply the migration to DSCP project `cipsazscgpyoaxwukmaw`, deploy the new Edge Function, run CI/build, then deploy the frontend only following the established user-controlled deployment workflow.
 - The existing active `2025/2026` session and payment-verification enforcement were not changed. Keep all requirements unconfigured until the college decides the actual office/requirement list.
+
+
+## SuperAdmin clearance requirements — deployment update — 2026-10-25
+
+- PR #9 merged to `main` as merge commit `9042bc273a0342351d124bda83720a137f250fa0`.
+- GitHub Actions validation passed: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40220830428
+- Cloudflare frontend deployment passed: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40220830427. The existing Worker remains `dscp`.
+- Applied migration `20261025190313_manage_clearance_requirements` to DSCP Supabase project `cipsazscgpyoaxwukmaw`. Migration history confirms it is recorded.
+- Deployed `manage-clearance-requirements` as ACTIVE version 1 with JWT verification enabled. The shared CORS logic is bundled into the deployed entrypoint.
+- Verified RPC execute permissions: `anon=false`, `authenticated=false`, `service_role=true`.
+- No clearance requirements were created or enabled. Existing active session, payment gate, and Administrator payment-only permissions were not changed.
+- Follow-up hardening: added `manage-clearance-requirements/index.ts` to the Deno check in `.github/workflows/validate.yml` (commit `5686cd5867d0d2f3a7ac3102b7c15724dec46124`). The new CI run must pass before marking the Edge Function source type-check verified; the earlier passing run did not include this function.
+- Still required: verify the latest CI run, then test the SuperAdmin panel in production using the college's actual configuration decisions. Do not enable requirements until the college confirms the approved offices/requirements and scope.
