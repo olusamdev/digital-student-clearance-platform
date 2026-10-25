@@ -131,9 +131,8 @@ export default function App() {
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    const paymentReturn = query.get('payment');
     const reference = query.get('reference') || query.get('trxref');
-    if (paymentReturn !== 'success' || !reference) return;
+    if (currentPath !== '/' || !reference) return;
     let mounted = true;
     void (async () => {
       const { data, error: verifyError } = await supabase.functions.invoke('student-payments', { body: { action: 'verify', payload: { reference } } });

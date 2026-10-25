@@ -185,3 +185,5 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Retest after deployment: (1) admin-assisted Paystack payment returns to dashboard and confirms success, (2) paid student enters registration number and creates password without a code, (3) student self-payment still works, (4) password-reset code still works, (5) staff dashboard has no office queue or completed-clearance sections.
 
 - CI initially caught two TypeScript comparisons left over from the removed activation-code branches. Those branches were simplified to password-reset-only logic; rerun validation against the latest branch head before merge.
+
+- Callback robustness: admin-assisted checkout uses a clean dashboard URL, allowing Paystack to append its reference parameters without a pre-existing query string. The dashboard verifies the reference only on `/`.
