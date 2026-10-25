@@ -103,7 +103,7 @@ Deno.serve(async req => {
       return respond({ success: true, activated: true, auth_email: email }, 200, origin);
     }
 
-    if (action === "complete_activation" || action === "complete_password_reset") {
+    if (action === "complete_password_reset") {
       const registrationNumber = reg(p.registration_number), suppliedCode = str(p.code, 40).toUpperCase().replace(/[^A-Z0-9]/g, "");
       const password = typeof p.password === "string" ? p.password : "";
       if (!registrationNumber || suppliedCode.length < 8 || password.length < 8) return respond({ error: "Enter your registration number, code, and a password of at least 8 characters." }, 400, origin);
@@ -175,7 +175,7 @@ Deno.serve(async req => {
       return respond({ success: true, whatsapp }, 200, origin);
     }
 
-    if (action === "issue_activation" || action === "issue_password_reset") {
+    if (action === "issue_password_reset") {
       const registrationNumber = reg(p.registration_number);
       if (!registrationNumber) return respond({ error: "Enter the student's registration number." }, 400, origin);
       const { data: student, error: studentError } = await db.from("student_records").select("id,registration_number,full_name,auth_user_id").eq("registration_number", registrationNumber).maybeSingle();
