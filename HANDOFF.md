@@ -213,3 +213,14 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Cloudflare frontend deployment passed: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40218805850
 - Supabase `student-portal` Edge Function deployed as ACTIVE version 12 (`verify_jwt=true)); fetched deployed source confirms lowercase gender normalization and male/female validation.
 - Still needs browser retest by user: save particulars using Male and Female; verify the old helper text, workspace label, and fee card are absent. The active session still has no enabled clearance requirements; this was intentionally not changed.
+
+
+## SuperAdmin clearance requirements management — 2026-10-25 (work in progress)
+
+- Work branch: `feature/superadmin-clearance-requirements`.
+- Added `src/components/ClearanceRequirements.tsx` and mounted it only under the existing `isSuperAdmin` gate in `src/App.tsx`.
+- Panel supports listing, creating, editing, enabling/disabling requirements, mandatory/optional status, instructions, display order, and optional department/programme scope. New requirements default to disabled in the form. Administrators' payment-only access is unchanged.
+- Added `supabase/functions/manage-clearance-requirements/index.ts`; it requires a valid signed-in user and routes list/save/toggle through a service-role RPC. The database function independently verifies an active SuperAdmin role and writes audit events.
+- Added migration `supabase/migrations/202610250001_manage_clearance_requirements.sql`. It has NOT been applied to Supabase. No requirements were created or enabled.
+- Validation is incomplete: no local build or CI result yet. Do not merge/deploy or apply the migration until the PR is reviewed and validation passes. After merge approval, apply the migration to DSCP project `cipsazscgpyoaxwukmaw`, deploy the new Edge Function, run CI/build, then deploy the frontend only following the established user-controlled deployment workflow.
+- The existing active `2025/2026` session and payment-verification enforcement were not changed. Keep all requirements unconfigured until the college decides the actual office/requirement list.
