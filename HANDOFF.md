@@ -162,4 +162,11 @@ This update supersedes earlier statements that the latest student payment/accoun
 - Student portal lookup now returns whether a code is required based on the latest successful transaction for the active session. If no successful student-initiated transaction can be verified, code requirement defaults to true.
 - Added server-side `complete_student_activation`: code-free account creation is allowed only for a verified successful `student_initiated` payment linked to an active clearance session. Admin-assisted or manually recorded payments cannot use this path.
 - Fixed the SuperAdmin WhatsApp validator's over-escaped regex, which rejected ordinary digits-only numbers. It accepts 10–15 digits after removing common formatting; for Nigeria use country code, e.g. `2348012345678`.
-- Pending validation: build/type checks, deployment of updated Edge Functions, frontend deployment, and end-to-end retest of both payment paths.
+- Validation and deployment completed:
+  - PR #3 merged to `main` as `fc70d74f871441fcfabebfb38dd4fc546a8acd33`.
+  - GitHub Actions passed `npm ci`, `npm run build`, and Deno checks for `student-portal`, `student-payments`, and `manage-student-access`.
+  - Existing Cloudflare Worker frontend deployment succeeded: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40196833403
+  - DSCP Supabase Edge Functions deployed: `student-portal` v10 (JWT verification remains enabled), `manage-student-access` v3 (function-level authorization retained).
+  - Latest test transaction is recorded as successful `student_initiated`, NGN 1,700, and clearance access is unlocked; the student account is not yet activated. This is eligible for the new code-free password setup path.
+  - SuperAdmin WhatsApp validation now accepts 10–15 digits after removing common formatting; for Nigeria, use digits with country code such as `2348012345678`.
+- Still required: user retests the already-paid student on `/student` (enter registration number; do not pay again) and confirms password creation appears without activation code; user also retries saving the WhatsApp support number. Separately verify an admin-assisted payment still requests its activation code.
