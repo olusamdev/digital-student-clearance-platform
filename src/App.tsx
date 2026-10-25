@@ -252,6 +252,21 @@ export default function App() {
     await loadStaffList();
   }
 
+  async function handleFirstPasswordChange(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setError(''); setNotice('');
+    if (firstPassword.length < 8) { setError('Use at least 8 characters for your new password.'); return; }
+    if (firstPassword !== firstPasswordConfirm) { setError('The passwords do not match.'); return; }
+    setAcceptBusy(true);
+    const { error: passwordError } = await supabase.auth.updateUser({ password: firstPassword });
+    if (passwordError) { setAcceptBusy(false); setError('Could not update your password. Please try again.'); return; }
+    const { data, error: completeError } = await supabase.functions.invoke('complete-staff-setup', { body: {} });
+    setAcceptBusy(false);
+    if (completeError || data?.error || !data?.success) { setError('Password changed, but account setup could not be finalized. Sign in again or contact SuperAdmin.'); return; }
+    setMustChangePassword(false); setFirstPassword(''); setFirstPasswordConfirm('');
+    if (session) await loadStaffContext(session);
+    setNotice('Password changed successfully.');
+  }
+
   async function handleAcceptInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(''); setNotice('');
     if (!session) { setError('Invitation session is missing or expired. Reopen the latest invitation email.'); return; }
@@ -266,6 +281,10 @@ export default function App() {
   if (busy) return <main className="loading-screen"><div className="brand-mark">COHT</div><p>Checking secure staff access...</p></main>;
 
   if (isStudentRoute) return <StudentPortal />;
+
+  if (session && mustChangePassword) {
+    return <main className="auth-layout"><section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">SECURE STAFF ACCESS</p><h1>Set your new password.</h1><p>Your activation code is temporary. Change it before continuing to your workspace.</p></div></section><section className="form-panel"><form className="login-card" onSubmit={handleFirstPasswordChange}><p className="eyebrow dark">FIRST LOGIN</p><h2>Change password</h2>{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="first-password">New password</label><input id="first-password" type="password" autoComplete="new-password" value={firstPassword} onChange={(e) => setFirstPassword(e.target.value)} minLength={8} required /><label htmlFor="first-password-confirm">Confirm new password</label><input id="first-password-confirm" type="password" autoComplete="new-password" value={firstPasswordConfirm} onChange={(e) => setFirstPasswordConfirm(e.target.value)} minLength={8} required /><button className="primary-button" type="submit" disabled={acceptBusy}>{acceptBusy ? 'Updating password...' : 'Change password and continue'}<span aria-hidden="true">→</span></button></form></section></main>;
+  }
 
   if (isAcceptRoute) {
     return <main className="auth-layout"><section className="brand-panel"><div className="brand-lockup"><div className="brand-mark">COHT</div><span>Digital Clearance</span></div><div className="brand-copy"><p className="eyebrow">TARABA STATE COLLEGE OF HEALTH TECHNOLOGY, TAKUM</p><h1>Set up your staff access.</h1><p>Choose a strong password to activate your invited staff account.</p></div><p className="panel-footnote">Authorised personnel only · Activity may be audited</p></section><section className="form-panel"><form className="login-card" onSubmit={handleAcceptInvite}><p className="eyebrow dark">STAFF INVITATION</p><h2>Complete your account</h2><p className="muted">Use at least 8 characters. Keep your password private.</p>{!session && <div className="alert warning">No active invitation session was found. Open the newest invitation link from your email.</div>}{error && <div className="alert error" role="alert">{error}</div>}{notice && <div className="alert success" role="status">{notice}</div>}<label htmlFor="new-password">New password</label><input id="new-password" type="password" autoComplete="new-password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} minLength={8} required /><label htmlFor="confirm-password">Confirm password</label><input id="confirm-password" type="password" autoComplete="new-password" value={invitePasswordConfirm} onChange={(e) => setInvitePasswordConfirm(e.target.value)} minLength={8} required /><button className="primary-button" type="submit" disabled={acceptBusy || !session}>{acceptBusy ? 'Saving password...' : 'Set password and continue'}<span aria-hidden="true">→</span></button><button className="text-button" type="button" onClick={() => { window.location.href = '/'; }}>Back to staff sign in</button></form><footer className="page-footer">COHT Digital Student Clearance Platform</footer></section></main>;
