@@ -193,7 +193,9 @@ Deno.serve(async (req) => {
       const { data: link, error: linkError } = await admin.from("session_students").select("id,session_id,student_id").eq("id", sessionStudentId).eq("student_id", student.id).maybeSingle();
       if (linkError || !link) return json({ error: "Clearance session not found for this student." }, 404, origin);
       const fullName = text(payload.full_name, 160);
-      const gender = text(payload.gender, 40);
+      const genderInput = text(payload.gender, 40).toLowerCase();
+      if (genderInput && genderInput !== "male" && genderInput !== "female") return json({ error: "Select Male or Female for gender." }, 400, origin);
+      const gender = genderInput || null;
       const address = text(payload.permanent_address, 500);
       const departmentId = text(payload.department_id, 80);
       const programmeId = text(payload.programme_id, 80);
@@ -205,7 +207,7 @@ Deno.serve(async (req) => {
       ]);
       if (departmentError || programmeError) return json({ error: "Could not validate your department and programme." }, 500, origin);
       if (!department?.active || !programme?.active || programme.department_id !== department.id) return json({ error: "Choose an active programme under your selected department." }, 400, origin);
-      const { error: updateStudentError } = await admin.from("student_records").update({ full_name: fullName, department_id: department.id, programme_id: programme.id, gender: gender || null, permanent_address: address || null, profile_completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", student.id);
+      const { error: updateStudentError } = await admin.from("student_records").update({ full_name: fullName, department_id: department.id, programme_id: programme.id, gender, permanent_address: address || null, profile_completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", student.id);
       if (updateStudentError) {
         console.error("student-portal profile update failed", { code: updateStudentError.code });
         return json({ error: "Could not save your particulars." }, 500, origin);
