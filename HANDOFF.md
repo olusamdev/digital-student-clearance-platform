@@ -237,3 +237,14 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - No clearance requirements were created or enabled. Existing active session, payment gate, and Administrator payment-only permissions were not changed.
 - Follow-up hardening: added `manage-clearance-requirements/index.ts` to the Deno check in `.github/workflows/validate.yml` (commit `5686cd5867d0d2f3a7ac3102b7c15724dec46124`). The updated CI run passed, including the new function: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40224309998.
 - Still required: verify the latest CI run, then test the SuperAdmin panel in production using the college's actual configuration decisions. Do not enable requirements until the college confirms the approved offices/requirements and scope.
+
+
+## Bug fix in progress — Provost queue and staff invitation roles — 2026-10-25
+
+- Confirmed the prior UI restriction to Administrator was introduced in commit `1715d8c` while simplifying the staff workspace. The invitation Edge Function still accepts all six non-SuperAdmin roles.
+- Restored the six role choices: Administrator, Clearance Officer, Unit Head, Registrar, Provost, and Certification Officer. Clearance Officer and Unit Head still require an office assignment; SuperAdmin remains excluded from invitations.
+- Restored the dedicated `/provost` route, which had been removed from the app while its navigation link and `ProvostPortal` component remained.
+- Fixed `manage-clearance` response handling so roles without platform-wide queue access only receive requests for their explicitly assigned office(s). A Provost-only account now receives an empty office-request list while retaining the separate Final Assent queue; a Provost who also has an office-scoped role sees only that office's requests.
+- Added `manage-clearance/index.ts` to CI's Deno checks.
+- Branch: `fix/provost-queue-and-staff-roles`. Not merged or deployed yet. Await GitHub validation and review before merging/deploying.
+- Live production retest remains necessary after merge/deployment: verify office staff only see their assigned office requests, Provost sees no office requests but sees eligible Final Assent cases, and each of the six invite roles can be selected (with office required only for Clearance Officer/Unit Head).
