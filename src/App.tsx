@@ -257,9 +257,7 @@ export default function App() {
     if (firstPassword.length < 8) { setError('Use at least 8 characters for your new password.'); return; }
     if (firstPassword !== firstPasswordConfirm) { setError('The passwords do not match.'); return; }
     setAcceptBusy(true);
-    const { error: passwordError } = await supabase.auth.updateUser({ password: firstPassword });
-    if (passwordError) { setAcceptBusy(false); setError('Could not update your password. Please try again.'); return; }
-    const { data, error: completeError } = await supabase.functions.invoke('complete-staff-setup', { body: {} });
+    const { data, error: completeError } = await supabase.functions.invoke('complete-staff-setup', { body: { new_password: firstPassword } });
     setAcceptBusy(false);
     if (completeError || data?.error || !data?.success) { setError('Password changed, but account setup could not be finalized. Sign in again or contact SuperAdmin.'); return; }
     setMustChangePassword(false); setFirstPassword(''); setFirstPasswordConfirm('');
