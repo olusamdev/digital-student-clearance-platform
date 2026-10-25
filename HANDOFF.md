@@ -146,3 +146,12 @@ This update supersedes earlier statements that the latest student payment/accoun
 - Live database check: 50 student records, zero active clearance sessions, zero enabled requirements, and zero payment transactions. Do not create or activate a session or import production data without explicit approval. End-to-end payment/clearance testing remains blocked until a controlled session and requirements are configured.
 - Security advisor still reports RLS-enabled tables with no policies for `staff_deletion_reservations` and `student_access_tokens`, several callable `SECURITY DEFINER` functions, and disabled leaked-password protection. Review these before broad launch.
 - Next: configure/verify Cloudflare GitHub Actions secrets, rerun the Cloudflare deployment workflow, verify the live `/student` and existing staff/Registrar routes, then configure Paystack test-mode secrets and run controlled end-to-end tests. No local pull was performed.
+
+
+## Production deployment recovered — 2026-10-25
+
+- Fixed `.github/workflows/deploy-cloudflare.yml`: upgraded to `cloudflare/wrangler-action@v4` and Node.js 22.
+- Root cause of the previous deployment failure was Wrangler v3 rejecting the assets-only configuration with `Missing entry-point`; it was not a token error.
+- GitHub Actions deployment run succeeded: https://github.com/olusamdev/digital-student-clearance-platform/actions/runs/40191961324
+- Deployment targeted the existing Cloudflare Worker `dscp`, configured in `wrangler.jsonc`; no new Worker/site was created.
+- Frontend build and Cloudflare deploy steps both passed. Confirm the live UI in a browser after refreshing; do not infer feature-level correctness from deployment success alone.
