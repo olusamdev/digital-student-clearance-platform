@@ -133,3 +133,11 @@ This section supersedes the earlier email-based student onboarding notes above f
 - Before enabling student self-checkout, set `PAYSTACK_SECRET_KEY` and a college-controlled `PAYSTACK_RECEIPT_EMAIL` as Edge Function secrets in the DSCP project `cipsazscgpyoaxwukmaw`. Do not use the COHT CBT Supabase project.
 - Test in Paystack test mode with a dummy student and active clearance session: student-initiated payment; admin-assisted payment; webhook/callback verification; duplicate-payment prevention; paid student routing directly to activation; expired/reused activation code; invalid code; admin-issued password reset; support WhatsApp link; and staff-role denial for unauthorized callers.
 - The additive database migration was applied and verified. No Edge Function deployment, frontend deployment, PR merge, or production student import was performed. The production database currently has zero student records and no active clearance session, so end-to-end payment/activation testing cannot yet be run against a real record. Confirm Paystack test/live mode and secrets before deployment.
+
+
+## 2026-10-25 — Correct student activation and WhatsApp validation
+- Student-initiated Paystack payment must lead directly to password creation without an activation code; admin-assisted payment still requires the single-use college-issued activation code.
+- Student portal lookup now returns whether a code is required based on the latest successful transaction for the active session. If no successful student-initiated transaction can be verified, code requirement defaults to true.
+- Added server-side `complete_student_activation`: code-free account creation is allowed only for a verified successful `student_initiated` payment linked to an active clearance session. Admin-assisted or manually recorded payments cannot use this path.
+- Fixed the SuperAdmin WhatsApp validator's over-escaped regex, which rejected ordinary digits-only numbers. It accepts 10–15 digits after removing common formatting; for Nigeria use country code, e.g. `2348012345678`.
+- Pending validation: build/type checks, deployment of updated Edge Functions, frontend deployment, and end-to-end retest of both payment paths.
