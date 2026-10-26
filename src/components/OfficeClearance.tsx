@@ -59,7 +59,7 @@ const dateText = (value: string | null) => value ? new Date(value).toLocaleStrin
 export default function OfficeClearance({ roles }: { roles: string[] }) {
   const relevant = roles.some((role) => eligibleRoles.has(role));
   const isProvost = roles.includes('provost');
-  const isRegistrar = roles.includes('registrar') || roles.includes('admin');
+  const isRegistrar = roles.includes('registrar');
   const [queue, setQueue] = useState<QueueData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');

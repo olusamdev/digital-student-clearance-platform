@@ -155,6 +155,8 @@ Deno.serve(async req => {
     }
 
     if (action === "issue_password_reset") {
+      return respond({ error: "Staff-assisted student password resets are not available. Students must use the approved account recovery process." }, 403, origin);
+      /* Disabled by policy: staff may assist with payment only. */
       const registrationNumber = reg(p.registration_number);
       if (!registrationNumber) return respond({ error: "Enter the student's registration number." }, 400, origin);
       const { data: student, error: studentError } = await db.from("student_records").select("id,registration_number,full_name,auth_user_id").eq("registration_number", registrationNumber).maybeSingle();
