@@ -47,23 +47,25 @@ Deno.serve(async (req) => {
     const role = String(body.role ?? "");
     const officeId = body.office_id ? String(body.office_id) : null;
     const departmentId = body.department_id ? String(body.department_id) : null;
-    const rolesAllowed = ["admin", "clearance_officer", "registrar", "provost", "certification_officer", "bursar"];
+    const rolesAllowed = ["admin", "clearance_officer", "head_of_department", "registrar", "provost", "certification_officer", "bursar"];
     if (!/^[a-z0-9._-]{3,40}$/.test(username) || !name || name.length > 160 || (staffNumber && staffNumber.length > 80) || !rolesAllowed.includes(role)) {
       return json({ error: "Provide a valid username, full name, optional staff number, and permitted role" }, 400);
     }
-    const officeScoped = role === "clearance_officer";
-    if (officeScoped !== Boolean(officeId)) return json({ error: "Only Clearance Officer accounts can be assigned a clearance office" }, 400);
-    const allowedOfficeCodes = new Set(["HOD", "EO", "LB", "LAB", "DU", "DM", "SM"]);
+    const officeScoped = role === "clearance_officer" || role === "head_of_department";
+    if (officeScoped !== Boolean(officeId)) return json({ error: "Clearance Officer and Head of Department accounts require their appropriate clearance office assignment" }, 400);
+    const allowedOfficeCodes = role === "head_of_department"
+      ? new Set(["HOD"])
+      : new Set(["EO", "LB", "LAB", "DU", "DM", "SM", "SAD"]);
     let officeCode: string | null = null;
     if (officeId) {
       const { data: office, error } = await admin.from("clearance_offices").select("id, code").eq("id", officeId).eq("active", true).maybeSingle();
       if (error || !office) return json({ error: "Selected clearance office is missing or inactive" }, 400);
-      if (!allowedOfficeCodes.has(office.code)) return json({ error: "Choose HOD, EO, LB, LAB, DU, DM, or SM for a Clearance Officer account" }, 400);
+      if (!allowedOfficeCodes.has(office.code)) return json({ error: role === "head_of_department" ? "Head of Department accounts must be assigned the HOD office" : "Choose EO, LB, LAB, DU, DM, SM, or SAD for a Clearance Officer account" }, 400);
       officeCode = office.code;
     }
-    const departmentRequired = officeCode === "HOD";
+    const departmentRequired = role === "head_of_department";
     if (departmentRequired !== Boolean(departmentId)) {
-      return json({ error: "Select a department for the HOD office only" }, 400);
+      return json({ error: "Select a department for the Head of Department role only" }, 400);
     }
     if (departmentId) {
       const { data: department, error } = await admin.from("departments").select("id").eq("id", departmentId).eq("active", true).maybeSingle();
