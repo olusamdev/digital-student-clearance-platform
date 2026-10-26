@@ -111,16 +111,12 @@ Deno.serve(async (req) => {
     const hasSuperAdminRole = (roles ?? []).some((item) => item.role === "superadmin");
     if (!profile?.active || !hasAdminRole || hasSuperAdminRole) return reply({ error: "Only an active Administrator (not SuperAdmin) can initiate an assisted student payment." }, 403, origin);
     actorUserId = authData.user.id;
-    email = text(authData.user.email, 254).toLowerCase();
-  } else {
-    // Students do not need personal email accounts. Use the college-controlled Paystack receipt address.
-    email = text(Deno.env.get("COLLEGE_RECEIPT_EMAIL") ?? Deno.env.get("PAYSTACK_RECEIPT_EMAIL"), 254).toLowerCase();
   }
+  // Staff and students use the college-controlled Paystack receipt address; neither login requires a personal email.
+  email = text(Deno.env.get("COLLEGE_RECEIPT_EMAIL") ?? Deno.env.get("PAYSTACK_RECEIPT_EMAIL"), 254).toLowerCase();
   if (!registrationNumber) return reply({ error: "Enter the student's registration number." }, 400, origin);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return reply({ error: adminInitiated
-      ? "The signed-in staff account needs a valid email for the Paystack receipt."
-      : "Student payments are not configured yet. Contact the college or ask an administrator to assist with payment." }, adminInitiated ? 400 : 503, origin);
+    return reply({ error: "The college-controlled Paystack receipt email is missing or invalid. Contact the college administrator." }, 503, origin);
   }
   const { data: student, error: studentError } = await admin.from("student_records").select("id,registration_number,full_name,auth_user_id")
     .eq("registration_number", registrationNumber).maybeSingle();
@@ -164,7 +160,11 @@ Deno.serve(async (req) => {
     body: JSON.stringify({ email, amount: amountKobo, currency: "NGN", reference, callback_url: callbackUrl, metadata: { registration_number: student.registration_number, session_student_id: link.id, purpose: "student_clearance_fee" } }),
   });
   const initialized = await paystackResponse.json().catch(() => ({}));
-  if (!paystackResponse.ok || initialized?.status !== true || !initialized?.data?.authorization_url) return reply({ error: "Paystack could not start payment. Please try again." }, 502, origin);
+  if (!paystackResponse.ok || initialized?.status !== true || !initialized?.data?.authorization_url) {
+    const providerMessage = text(initialized?.message, 240) || "No rejection message returned";
+    console.error("Paystack transaction initialization failed", { http_status: paystackResponse.status, provider_message: providerMessage, registration_number: student.registration_number, payment_mode: adminInitiated ? "admin_assisted" : "student_initiated" });
+    return reply({ error: `Paystack could not start payment: ${providerMessage}. Please check the college payment configuration or try again.` }, 502, origin);
+  }
   const { error: insertError } = await admin.from("payment_transactions").insert({
     session_student_id: link.id, provider: "paystack", provider_reference: reference, amount_kobo: amountKobo,
     currency: "NGN", status: "pending", registration_number_snapshot: student.registration_number, payer_email: email,
