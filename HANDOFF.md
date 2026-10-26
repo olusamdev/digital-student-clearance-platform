@@ -316,3 +316,14 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Production RPC verification: `hodpht` (Pharmacy HOD) sees 3 HOD requests, `hodpub` and `hodndhim` see 0 each, Bursar sees 3 BURSARY requests, Registrar sees 3 REG requests, and SuperAdmin sees 0 clearance requests. These checks confirm the existing test queue is correctly scoped; no live browser account test has yet been performed.
 - PR #17: https://github.com/olusamdev/digital-student-clearance-platform/pull/17. Frontend build and Deno checks passed on the initial PR head. After aligning the source migration filename with the applied migration version, rerun CI, then merge and confirm Cloudflare deployment. Deploy updated `invite-staff` Edge Function after merge. Browser-test HOD department selection, Clearance Officer/SAD selection, and Bursar/Registrar queue access.
 - No SAD staff account currently exists in the production assignments, so SAD queue visibility should be verified after creating a controlled test account; existing SAD requirements and submitted requests remain intact.
+
+
+## HOD / SAD / Bursar / Registrar routing rollout — 2026-10-27
+
+- PR #17 merged to `main` as `ff4b5be78040485dc631f0e20c3681be997a70eb`.
+- GitHub validation workflow run 40417162359 passed: `npm run build` and Deno checks for the portal and relevant Edge Functions.
+- Cloudflare frontend deployment workflow run 40417162105 passed for the merge commit.
+- Production Supabase migration `20261026225809_staff_role_clearance_routing` is applied and recorded. It converts existing HOD-office assignments to the standalone `head_of_department` role and routes Clearance Officer (including SAD), HOD by department, Bursar to BURSARY, and Registrar to REG. Authorization/RLS helpers, request notifications, and reminder recipients were updated.
+- Production queue checks: Pharmacy HOD receives 3 Pharmacy HOD requests; Public Health Technology and Health Information Management HODs receive 0 each; Bursar receives 3 BURSARY requests; Registrar receives 3 REG requests; SuperAdmin receives 0 requests. A SQL authorization test also confirmed HOD/Bursar/Registrar are denied the wrong office and allowed to reach their own office's request validation. No clearance requests or requirements were modified by these tests.
+- Supabase `invite-staff` deployed as ACTIVE version 17 with `verify_jwt=true`, including the new HOD role and SAD office validation.
+- Live browser/form testing remains unverified from this environment. Please test the SuperAdmin Staff Management form and sign in with controlled HOD, SAD, Bursar, and Registrar accounts. No active SAD staff assignment exists yet, so SAD-specific queue access requires creating/testing one.
