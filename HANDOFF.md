@@ -285,3 +285,11 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Only the selected SuperAdmin section mounts. Existing components, handlers, authorization conditions, and workflows are preserved behind their respective section selection.
 - Non-SuperAdmin staff/admin dashboard routing is unchanged. The staff account-status and permissions footer is positioned after dashboard content rather than above it.
 - Branch: `ui/superadmin-section-navigation`. Build/CI, merge, deployment, and browser verification pending.
+
+## HOD request queue fix — 2026-10-26
+
+- Production diagnosis: the Pharmacy HOD's active assignment matches the `Head of Department` office and Pharmacy department. The database RPC returns 3 Pharmacy HOD requests, but the `manage-clearance` Edge Function then applies a second office-only filter that only recognises `clearance_officer` and `unit_head`, dropping all HOD requests from the response.
+- Fix on branch `fix/hod-request-queue-filter`: removed the redundant Edge Function post-filter. The database function remains the source of queue authorization and scopes HOD requests by both assigned office and the student's department. SuperAdmin exclusion remains enforced in the database workflow.
+- Changed file: `supabase/functions/manage-clearance/index.ts`.
+- Current status: code committed to branch; CI, PR review/merge, Edge Function deployment, and post-deployment verification are still required. Do not claim the live HOD portal is fixed until the function is deployed and the Pharmacy HOD queue is verified.
+- Production read-only check before fix: Pharmacy HOD RPC queue count = 3; other configured HOD departments returned 0 matching requests. The live requests are for Pharmacy students and the Head of Department office.
