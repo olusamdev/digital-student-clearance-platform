@@ -381,7 +381,7 @@ BEGIN
     RAISE EXCEPTION 'Unsupported clearance workflow action';
   END IF;
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.can_access_clearance_request(target_id uuid)
  RETURNS boolean
@@ -426,7 +426,7 @@ AS $function$
         
     )
   );
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.can_access_session_student(target_id uuid)
  RETURNS boolean
@@ -470,7 +470,7 @@ AS $function$
         
     )
   );
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.can_access_student_record(target_student_id uuid)
  RETURNS boolean
@@ -514,7 +514,7 @@ AS $function$
         
     )
   );
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.notify_clearance_request_submitted()
  RETURNS trigger
@@ -548,7 +548,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.process_clearance_reminders()
  RETURNS jsonb
