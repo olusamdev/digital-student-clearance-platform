@@ -336,7 +336,7 @@ export default function App() {
       ] as const).map(([section, label]) => <button key={section} type="button" className={`superadmin-nav-pill${superAdminSection === section ? ' active' : ''}`} aria-current={superAdminSection === section ? 'page' : undefined} onClick={() => setSuperAdminSection(section)}>{label}</button>)}
     </nav>}
     {isSuperAdmin && superAdminSection === 'activities' && <section className="superadmin-activities"><p className="eyebrow dark">SUPERADMIN DASHBOARD</p><h2>Activities</h2><p className="muted">The Activities section will be defined later.</p></section>}
-    {!isSuperAdmin && activeRoles.some((item) => ['clearance_officer','head_of_department','bursar','provost','registrar'].includes(item.role)) && <OfficeClearance roles={activeRoles.map((item) => item.role)} />}
+    {!isSuperAdmin && !activeRoles.some((item) => item.role === 'admin') && activeRoles.some((item) => ['clearance_officer','head_of_department','bursar','provost','registrar'].includes(item.role)) && <OfficeClearance roles={activeRoles.map((item) => item.role)} />}
     {isSuperAdmin && superAdminSection === 'institutional' && <InstitutionalSetup />}
     {isSuperAdmin && superAdminSection === 'requirements' && <ClearanceRequirements />}
     {isSuperAdmin && superAdminSection === 'import' && <StudentImport />}
