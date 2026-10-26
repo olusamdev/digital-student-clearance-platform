@@ -286,10 +286,11 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Non-SuperAdmin staff/admin dashboard routing is unchanged. The staff account-status and permissions footer is positioned after dashboard content rather than above it.
 - Branch: `ui/superadmin-section-navigation`. Build/CI, merge, deployment, and browser verification pending.
 
-## HOD request queue fix — 2026-10-26
+## HOD request queue / first-login session fix — 2026-10-26
 
-- Production diagnosis: the Pharmacy HOD's active assignment matches the `Head of Department` office and Pharmacy department. The database RPC returns 3 Pharmacy HOD requests, but the `manage-clearance` Edge Function then applies a second office-only filter that only recognises `clearance_officer` and `unit_head`, dropping all HOD requests from the response.
-- Fix on branch `fix/hod-request-queue-filter`: removed the redundant Edge Function post-filter. The database function remains the source of queue authorization and scopes HOD requests by both assigned office and the student's department. SuperAdmin exclusion remains enforced in the database workflow.
-- Changed file: `supabase/functions/manage-clearance/index.ts`.
-- Current status: code committed to branch; CI, PR review/merge, Edge Function deployment, and post-deployment verification are still required. Do not claim the live HOD portal is fixed until the function is deployed and the Pharmacy HOD queue is verified.
-- Production read-only check before fix: Pharmacy HOD RPC queue count = 3; other configured HOD departments returned 0 matching requests. The live requests are for Pharmacy students and the Head of Department office.
+- Production diagnosis: Pharmacy HOD account `hodpht` is active, correctly assigned to the Pharmacy department and Head of Department office, and the database workflow returns 3 matching requests. Production logs show its `manage-clearance` `list_queue` POST requests returning HTTP 401.
+- Root cause: `complete-staff-setup` changes the Auth password via the Admin API, invalidating the activation-code session. The frontend then reused that stale session by calling `loadStaffContext(session)`, so the dashboard could appear signed in while protected Edge Function calls failed with 401.
+- Fix on branch `fix/hod-request-queue-filter`: after successful first-login password setup, clear the local stale session and require the staff member to sign in again with the new password before loading the protected workspace.
+- Also removed a redundant office-only queue post-filter from `manage-clearance/index.ts`. The database workflow already authorizes and scopes requests by active role, office and (for HODs) department; the extra filter in GitHub source would otherwise drop HOD requests if redeployed. Current deployed function source already returns the database RPC result directly.
+- Changed files: `src/App.tsx`, `supabase/functions/manage-clearance/index.ts`, `HANDOFF.md`.
+- Validation/rollout: branch commits are present. CI, PR review/merge, frontend deployment, and post-deployment HOD sign-in/queue verification remain pending. Do not claim the live portal is fixed until the HOD signs in afresh and sees the expected requests.
