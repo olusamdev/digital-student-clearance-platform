@@ -8,7 +8,6 @@ export default function StudentAccessTools({ canManageSupport, canManageStudents
   const [registrationNumber, setRegistrationNumber] = useState('');
   const [lookup, setLookup] = useState<Lookup | null>(null);
   const [supportNumber, setSupportNumber] = useState('');
-  const [code, setCode] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -40,22 +39,6 @@ export default function StudentAccessTools({ canManageSupport, canManageStudents
     if (data?.already_paid) { setNotice('A verified payment is already linked to this student. No second payment was started.'); return; }
     if (!data?.authorization_url) { setError('Paystack did not return a payment link.'); return; }
     window.location.assign(String(data.authorization_url));
-  }
-
-  async function issueCode() {
-    if (!lookup) return;
-    setBusy('code'); setError(''); setNotice(''); setCode('');
-    const action = 'issue_password_reset';
-    const { data, error: invokeError } = await supabase.functions.invoke('manage-student-access', {
-      body: { action, payload: { registration_number: lookup.student.registration_number } },
-    });
-    setBusy('');
-    if (invokeError || data?.error) {
-      setError(invokeError ? await describeFunctionError(invokeError, 'manage-student-access', 'Could not issue the code.') : String(data.error));
-      return;
-    }
-    setCode(String(data.code || ''));
-    setNotice(`Password-reset code issued for ${data.student?.full_name || lookup.student.full_name}. It expires in 30 minutes. Give it directly to the verified student; it will not be shown again after leaving this page.`);
   }
 
   async function loadSupportNumber() {
@@ -93,7 +76,7 @@ export default function StudentAccessTools({ canManageSupport, canManageStudents
         <div className="panel-heading"><div><p className="eyebrow dark">ASSISTED PAYMENT</p><h2>Pay for a student</h2></div></div>
         <form className="management-form" onSubmit={findStudent}>
           <label htmlFor="assisted-reg">Student registration number</label>
-          <input id="assisted-reg" value={registrationNumber} onChange={e => { setRegistrationNumber(e.target.value); setLookup(null); setCode(''); }} maxLength={100} required placeholder="Enter the exact registration number" />
+          <input id="assisted-reg" value={registrationNumber} onChange={e => { setRegistrationNumber(e.target.value); setLookup(null); }} maxLength={100} required placeholder="Enter the exact registration number" />
           <button className="secondary-button" type="submit" disabled={busy !== ''}>{busy === 'lookup' ? 'Checking record…' : 'Find student'}</button>
         </form>
         {lookup && <div className="student-match"><p><strong>{lookup.student.full_name}</strong></p><p className="field-note">Registration number: {lookup.student.registration_number}</p><p className="field-note">Payment: {lookup.payment_verified ? 'Verified' : 'Not verified'} · Account: {lookup.account_ready ? 'Activated' : 'Not activated'}</p>{lookup.payment_verified ? <p className="alert success">A verified payment already exists. Do not start another payment.</p> : <button className="primary-button" type="button" onClick={() => void startAssistedPayment()} disabled={busy !== ''}>{busy === 'payment' ? 'Opening Paystack…' : 'Continue to Paystack payment'}<span aria-hidden="true">→</span></button>}</div>}
