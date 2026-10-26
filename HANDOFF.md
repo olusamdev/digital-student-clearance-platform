@@ -294,3 +294,14 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Also removed a redundant office-only queue post-filter from `manage-clearance/index.ts`. The database workflow already authorizes and scopes requests by active role, office and (for HODs) department; the extra filter in GitHub source would otherwise drop HOD requests if redeployed. Current deployed function source already returns the database RPC result directly.
 - Changed files: `src/App.tsx`, `supabase/functions/manage-clearance/index.ts`, `HANDOFF.md`.
 - Validation/rollout: branch commits are present. CI, PR review/merge, frontend deployment, and post-deployment HOD sign-in/queue verification remain pending. Do not claim the live portal is fixed until the HOD signs in afresh and sees the expected requests.
+
+## Staff role and clearance-office assignment refactor — 2026-10-26
+
+- Staff management now offers standalone roles: Administrator, Registrar, Provost, Certification Officer, and Bursar. Clearance Officer is the only office-scoped role. The separate Unit Head and Head of Department role options have been removed.
+- Clearance Officer office choices are restricted to HOD, EO, LB, LAB, DU, DM, and SM. Selecting HOD reveals a required department field; all other listed offices remain department-unscoped. Standalone roles send no office or department assignment.
+- The Edge Function validates the role/office/department combination server-side. A database trigger and check constraint enforce the same model.
+- Applied production migrations: `20261026222146_add_bursar_app_role` and `20261026222453_standardize_staff_role_office_scope`.
+- Existing active Head of Department assignments were converted to Clearance Officer + HOD office + department scope. The existing BURSARY office assignment was converted to the standalone Bursar role. Production read-only verification showed the Pharmacy HOD queue still returns 3 requests and zero requests from other departments; Health Information Management and Public Health Technology HOD queues return 0 each, with zero cross-department items.
+- Clearance request notifications, reminder recipients, queue listing/decisions, and RLS helper functions now apply department scope when the office code is HOD.
+- Changed source files: `src/App.tsx`, `src/components/OfficeClearance.tsx`, `supabase/functions/invite-staff/index.ts`, `supabase/migrations/20261026222146_add_bursar_app_role.sql`, `supabase/migrations/20261026222453_standardize_staff_role_office_scope.sql`.
+- Current status: production database changes applied and role/queue SQL checks passed. Frontend CI, review/merge, deployment, and live SuperAdmin form verification remain pending.
