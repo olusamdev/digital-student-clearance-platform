@@ -110,7 +110,15 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
     }
   }, [invoke]);
 
-  useEffect(() => { if (relevant) void reload(); }, [relevant, reload]);
+  useEffect(() => {
+    if (!relevant) return;
+    void reload();
+    // Refresh the office queue when staff return to this tab, so new requests
+    // appear without requiring a sign-out or a full page reload.
+    const refreshOnFocus = () => { void reload(false); };
+    window.addEventListener('focus', refreshOnFocus);
+    return () => window.removeEventListener('focus', refreshOnFocus);
+  }, [relevant, reload]);
 
   async function perform(key: string, action: string, payload: Record<string, unknown>, successMessage: string) {
     setBusy(key); setError(''); setNotice('');
