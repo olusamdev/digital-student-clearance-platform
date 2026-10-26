@@ -327,3 +327,13 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Production queue checks: Pharmacy HOD receives 3 Pharmacy HOD requests; Public Health Technology and Health Information Management HODs receive 0 each; Bursar receives 3 BURSARY requests; Registrar receives 3 REG requests; SuperAdmin receives 0 requests. A SQL authorization test also confirmed HOD/Bursar/Registrar are denied the wrong office and allowed to reach their own office's request validation. No clearance requests or requirements were modified by these tests.
 - Supabase `invite-staff` deployed as ACTIVE version 17 with `verify_jwt=true`, including the new HOD role and SAD office validation.
 - Live browser/form testing remains unverified from this environment. Please test the SuperAdmin Staff Management form and sign in with controlled HOD, SAD, Bursar, and Registrar accounts. No active SAD staff assignment exists yet, so SAD-specific queue access requires creating/testing one.
+
+
+## Latest fix — 2026-10-27: Bursar and HOD workspace visibility
+
+- Root cause: `src/App.tsx` mounted `OfficeClearance` only for admin, clearance_officer, provost, and registrar. It omitted the standalone `bursar` and `head_of_department` roles, so those users never called the queue function even though the backend routing was correct.
+- Fixed dashboard gate to include both `bursar` and `head_of_department`. No database, role-routing, or Edge Function changes were needed.
+- Production read-only RPC test before the frontend fix confirmed the active Bursar's `list_queue` returned 3 requests, all for `BURSARY`.
+- PR #18 merged to main as `6cd3bcae41c6f4c013e5e9e0a989f4ea9b1dc073`.
+- Validation workflow for the fix passed on branch commit `69191b0bcd3a92681f7a67a1d013e9b6807b5e86` (frontend build and Deno checks).
+- Production Cloudflare deployment and post-deployment portal/browser verification were still running/pending at the time of this note; do not claim live UI verification until confirmed.
