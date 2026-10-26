@@ -212,7 +212,7 @@ export default function App() {
     const needsDepartment = inviteRole === 'head_of_department';
     const { data, error: invokeError } = await supabase.functions.invoke('invite-staff', { body: {
       full_name: inviteName.trim(), username: inviteUsername.trim().toLowerCase(), staff_number: inviteNumber.trim() || null,
-      role: inviteRole, office_id: needsOffice ? (inviteOffice || null) : null, department_id: needsDepartment ? (inviteDepartment || null) : null,
+      role: inviteRole, office_id: needsOffice ? (selectedOffice?.id || null) : null, department_id: needsDepartment ? (inviteDepartment || null) : null,
     } });
     setInviteBusy(false);
     if (invokeError || data?.error || !data?.success) {
