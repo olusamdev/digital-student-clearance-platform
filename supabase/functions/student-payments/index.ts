@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
   // Staff and students use the college-controlled Paystack receipt address; neither login requires a personal email.
   email = text(Deno.env.get("COLLEGE_RECEIPT_EMAIL") ?? Deno.env.get("PAYSTACK_RECEIPT_EMAIL"), 254).toLowerCase();
   if (!registrationNumber) return reply({ error: "Enter the student's registration number." }, 400, origin);
-  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return reply({ error: "The college-controlled Paystack receipt email is missing or invalid. Contact the college administrator." }, 503, origin);
   }
   const { data: student, error: studentError } = await admin.from("student_records").select("id,registration_number,full_name,auth_user_id")
