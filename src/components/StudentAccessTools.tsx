@@ -14,7 +14,7 @@ export default function StudentAccessTools({ canManageSupport, canManageStudents
   const [notice, setNotice] = useState('');
 
   async function findStudent(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy('lookup'); setError(''); setNotice(''); setLookup(null); setCode('');
+    event.preventDefault(); setBusy('lookup'); setError(''); setNotice(''); setLookup(null);
     const { data, error: invokeError } = await supabase.functions.invoke('student-portal', {
       body: { action: 'lookup_record', payload: { registration_number: registrationNumber.trim().toUpperCase() } },
     });
@@ -84,7 +84,7 @@ export default function StudentAccessTools({ canManageSupport, canManageStudents
   }
 
   return <section className="management-section">
-    <div className="section-title"><div><p className="eyebrow dark">STUDENT SERVICES</p><h2>Student payment and account assistance</h2><p className="muted">Payments are verified by Paystack. Students create their own password after a verified payment; codes are used only for password recovery.</p></div></div>
+    <div className="section-title"><div><p className="eyebrow dark">STUDENT SERVICES</p><h2>Student payment and account assistance</h2><p className="muted">This section is for paying a clearance fee on behalf of a student only.</p></div></div>
     {error && <div className="alert error" role="alert">{error}</div>}
     {notice && <div className="alert success" role="status">{notice}</div>}
     <div className="management-grid">
@@ -99,19 +99,7 @@ export default function StudentAccessTools({ canManageSupport, canManageStudents
         {lookup && <div className="student-match"><p><strong>{lookup.student.full_name}</strong></p><p className="field-note">Registration number: {lookup.student.registration_number}</p><p className="field-note">Payment: {lookup.payment_verified ? 'Verified' : 'Not verified'} · Account: {lookup.account_ready ? 'Activated' : 'Not activated'}</p>{lookup.payment_verified ? <p className="alert success">A verified payment already exists. Do not start another payment.</p> : <button className="primary-button" type="button" onClick={() => void startAssistedPayment()} disabled={busy !== ''}>{busy === 'payment' ? 'Opening Paystack…' : 'Continue to Paystack payment'}<span aria-hidden="true">→</span></button>}</div>}
         <p className="field-note">Paystack uses the signed-in staff account for its receipt email. The payment is recorded against the student registration number, not the student's email.</p>
       </article>
-      <article className="panel">
-        <div className="panel-heading"><div><p className="eyebrow dark">ACCOUNT SUPPORT</p><h2>Password reset assistance</h2></div></div>
-        <form className="management-form" onSubmit={findStudent}>
-          <label htmlFor="code-reg">Student registration number</label>
-          <input id="code-reg" value={registrationNumber} onChange={e => { setRegistrationNumber(e.target.value); setLookup(null); setCode(''); }} maxLength={100} required placeholder="Enter the exact registration number" />
-          <button className="secondary-button" type="submit" disabled={busy !== ''}>{busy === 'lookup' ? 'Checking record…' : 'Find student'}</button>
-        </form>
-        {lookup && <div className="management-form">
-          <p className="field-note">Activation codes are no longer used. Generate a one-time code only when a student needs to reset a forgotten password.</p>
-          <button className="primary-button" type="button" onClick={() => void issueCode()} disabled={busy !== ''}>{busy === 'code' ? 'Generating code…' : 'Generate password-reset code'}<span aria-hidden="true">→</span></button>
-          {code && <div className="activation-code"><p className="field-note">Give this code directly to the verified student. It is shown only now.</p><strong>{code}</strong><button className="secondary-button" type="button" onClick={() => { void navigator.clipboard?.writeText(code); setNotice('Code copied. Deliver it directly to the verified student.'); }}>Copy code</button></div>}
-        </div>}
-      </article>
+
       </>}
       {canManageSupport && <article className="panel">
         <div className="panel-heading"><div><p className="eyebrow dark">SUPERADMIN SETTING</p><h2>Student WhatsApp support</h2></div></div>
