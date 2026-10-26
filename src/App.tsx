@@ -279,10 +279,15 @@ export default function App() {
     setAcceptBusy(true);
     const { data, error: completeError } = await supabase.functions.invoke('complete-staff-setup', { body: { new_password: firstPassword } });
     setAcceptBusy(false);
-    if (completeError || data?.error || !data?.success) { setError('Password changed, but account setup could not be finalized. Sign in again or contact SuperAdmin.'); return; }
-    setMustChangePassword(false); setFirstPassword(''); setFirstPasswordConfirm('');
-    if (session) await loadStaffContext(session);
-    setNotice('Password changed successfully.');
+    if (completeError || data?.error || !data?.success) { setError('Password change could not be finalized. Sign in again or contact SuperAdmin.'); return; }
+
+    // complete-staff-setup changes the Auth password through the Admin API, which
+    // invalidates the activation-code session. Clear the stale local session and
+    // require a fresh sign-in before loading any protected staff workspace.
+    await supabase.auth.signOut({ scope: 'local' });
+    setSession(null); setStaff(null); setMustChangePassword(false);
+    setPassword(''); setFirstPassword(''); setFirstPasswordConfirm('');
+    setNotice('Password changed successfully. Please sign in again with your new password.');
   }
 
   async function handleAcceptInvite(event: FormEvent<HTMLFormElement>) {

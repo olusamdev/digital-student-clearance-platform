@@ -285,3 +285,12 @@ Branch: `fix/admin-payment-return-and-simplify-admin`
 - Only the selected SuperAdmin section mounts. Existing components, handlers, authorization conditions, and workflows are preserved behind their respective section selection.
 - Non-SuperAdmin staff/admin dashboard routing is unchanged. The staff account-status and permissions footer is positioned after dashboard content rather than above it.
 - Branch: `ui/superadmin-section-navigation`. Build/CI, merge, deployment, and browser verification pending.
+
+## HOD request queue / first-login session fix — 2026-10-26
+
+- Production diagnosis: Pharmacy HOD account `hodpht` is active, correctly assigned to the Pharmacy department and Head of Department office, and the database workflow returns 3 matching requests. Production logs show its `manage-clearance` `list_queue` POST requests returning HTTP 401.
+- Root cause: `complete-staff-setup` changes the Auth password via the Admin API, invalidating the activation-code session. The frontend then reused that stale session by calling `loadStaffContext(session)`, so the dashboard could appear signed in while protected Edge Function calls failed with 401.
+- Fix on branch `fix/hod-request-queue-filter`: after successful first-login password setup, clear the local stale session and require the staff member to sign in again with the new password before loading the protected workspace.
+- Also removed a redundant office-only queue post-filter from `manage-clearance/index.ts`. The database workflow already authorizes and scopes requests by active role, office and (for HODs) department; the extra filter in GitHub source would otherwise drop HOD requests if redeployed. Current deployed function source already returns the database RPC result directly.
+- Changed files: `src/App.tsx`, `supabase/functions/manage-clearance/index.ts`, `HANDOFF.md`.
+- Validation/rollout: branch commits are present. CI, PR review/merge, frontend deployment, and post-deployment HOD sign-in/queue verification remain pending. Do not claim the live portal is fixed until the HOD signs in afresh and sees the expected requests.
