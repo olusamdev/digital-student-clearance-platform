@@ -595,6 +595,6 @@ BEGIN
   END LOOP;
   RETURN jsonb_build_object('success',true,'interval_hours',v_interval_hours,'requests_reminded',v_count);
 END;
-$function$
+$function$;
 
 COMMIT;
