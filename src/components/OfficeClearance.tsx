@@ -53,7 +53,7 @@ type QueueData = {
   reminder_interval_hours: number;
 };
 
-const eligibleRoles = new Set(['admin', 'clearance_officer', 'provost', 'registrar']);
+const eligibleRoles = new Set(['admin', 'clearance_officer', 'head_of_department', 'bursar', 'provost', 'registrar']);
 const dateText = (value: string | null) => value ? new Date(value).toLocaleString() : '—';
 
 export default function OfficeClearance({ roles }: { roles: string[] }) {
