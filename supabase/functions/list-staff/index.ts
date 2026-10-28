@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
     if (!profile || !roles?.some((role) => role.role === "superadmin")) return json({ error: "SuperAdmin access required" }, 403);
 
     const [profilesResult, assignmentsResult, officesResult] = await Promise.all([
-      admin.from("staff_profiles").select("user_id, full_name, username, email, staff_number, must_change_password, active, created_at").order("full_name", { ascending: true }),
+      admin.from("staff_profiles").select("user_id, full_name, username, email, staff_number, must_change_password, active, created_at, whatsapp_phone, whatsapp_enabled").order("full_name", { ascending: true }),
       admin.from("staff_role_assignments").select("user_id, role, office_id, department_id, active"),
       admin.from("clearance_offices").select("id, code, name, active").order("display_order", { ascending: true }),
     ]);
