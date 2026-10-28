@@ -290,6 +290,7 @@ Deno.serve(async (req) => {
           const office = Array.isArray(r.clearance_offices) ? r.clearance_offices[0] : r.clearance_offices;
           return {
             id: r.id,
+            request_id: request?.id ?? null,
             office_name: office?.name ?? "Clearance office",
             office_code: office?.code ?? "",
             instructions: r.instructions,

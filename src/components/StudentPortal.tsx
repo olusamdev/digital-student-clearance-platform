@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 import { describeFunctionError } from '../functionErrors';
@@ -6,7 +6,8 @@ import { describeFunctionError } from '../functionErrors';
 type Student = { id: string; registration_number: string; full_name: string; gender: string | null; permanent_address: string | null; department_id: string | null; programme_id: string | null; department: string | null; programme: string | null; phone_number: string | null };
 type DepartmentOption = { id: string; code: string; name: string };
 type ProgrammeOption = { id: string; department_id: string; code: string; name: string };
-type Requirement = { id: string; office_name: string; office_code: string; instructions: string | null; required: boolean; status: string; requested_at: string | null; decision_at: string | null; comments: { id: string; comment_text: string; author_role: string; created_at: string }[] };
+type StudentReceipt = { id: string; original_filename: string; mime_type: string; size_bytes: number; uploaded_at: string | null; clearance_request_id: string };
+type Requirement = { id: string; request_id: string | null; office_name: string; office_code: string; instructions: string | null; required: boolean; status: string; requested_at: string | null; decision_at: string | null; receipts: StudentReceipt[]; comments: { id: string; comment_text: string; author_role: string; created_at: string }[] };
 type StudentSession = { id: string; session_id: string; session_name: string; academic_session: string | null; active: boolean; opens_at: string | null; closes_at: string | null; payment_unlocked_at: string | null; profile_confirmed_at: string | null; final_assent: string; final_assent_remarks: string | null; completed_at: string | null; requirements: Requirement[] };
 type Dashboard = { student: Student; clearance_fee_kobo: number; sessions: StudentSession[]; departments: DepartmentOption[]; programmes: ProgrammeOption[] };
 type LookupResult = { student: { registration_number: string; full_name: string }; account_ready: boolean; auth_email: string | null; payment_verified: boolean; payment_pending: boolean; activation_requires_code: boolean; clearance_fee_kobo: number; session_available: boolean };
@@ -53,6 +54,20 @@ export default function StudentPortal() {
       return;
     }
     const result = data as Dashboard;
+    const receiptResults = await Promise.all(result.sessions.map(async (item) => {
+      const { data: receiptData } = await supabase.functions.invoke('bursary-receipts', {
+        body: { action: 'list_student_receipts', payload: { session_student_id: item.id } },
+      });
+      return { sessionStudentId: item.id, receipts: Array.isArray(receiptData?.receipts) ? receiptData.receipts as StudentReceipt[] : [] };
+    }));
+    const receiptsBySession = new Map(receiptResults.map((row) => [row.sessionStudentId, row.receipts]));
+    result.sessions = result.sessions.map((item) => ({
+      ...item,
+      requirements: item.requirements.map((req) => ({
+        ...req,
+        receipts: (receiptsBySession.get(item.id) ?? []).filter((receipt) => receipt.clearance_request_id === req.request_id),
+      })),
+    }));
     setDashboard(result);
     setFullName(result.student.full_name || '');
     const savedGender = (result.student.gender || '').toLowerCase();
@@ -319,6 +334,30 @@ export default function StudentPortal() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not confirm your particulars.'); }
   }
 
+  async function uploadBursaryReceipt(event: ChangeEvent<HTMLInputElement>, item: StudentSession, req: Requirement) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !req.request_id) return;
+    const allowed = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
+    if (!allowed.has(file.type)) { setError('Upload a PDF, JPG, PNG, or WebP receipt.'); return; }
+    if (file.size < 1 || file.size > 5 * 1024 * 1024) { setError('Receipt files must be 5 MB or smaller.'); return; }
+    setBusy('receipt-' + req.id); setError(''); setNotice('');
+    try {
+      const { data: prepared, error: prepareError } = await supabase.functions.invoke('bursary-receipts', {
+        body: { action: 'create_upload', payload: { session_student_id: item.id, clearance_request_id: req.request_id, filename: file.name, mime_type: file.type, size_bytes: file.size } },
+      });
+      if (prepareError || prepared?.error || !prepared?.path || !prepared?.token || !prepared?.receipt_id) throw new Error(prepared?.error || 'Could not prepare a secure receipt upload.');
+      const { error: uploadError } = await supabase.storage.from('bursary-receipts').uploadToSignedUrl(String(prepared.path), String(prepared.token), file, { contentType: file.type, upsert: false });
+      if (uploadError) throw new Error('The receipt file could not be uploaded. Please try again.');
+      const { data: completed, error: completeError } = await supabase.functions.invoke('bursary-receipts', {
+        body: { action: 'complete_upload', payload: { session_student_id: item.id, clearance_request_id: req.request_id, receipt_id: prepared.receipt_id } },
+      });
+      if (completeError || completed?.error) throw new Error(completed?.error || 'The receipt could not be submitted for review.');
+      setNotice('Receipt uploaded and submitted to the Bursar for review. This does not clear your Bursary request.');
+      await loadDashboard();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Receipt upload failed.'); }
+    finally { setBusy(''); }
+  }
   async function requestClearance(item: StudentSession) {
     if (!window.confirm('Submit your clearance requests to the required offices?')) return;
     try {
@@ -371,7 +410,7 @@ export default function StudentPortal() {
           <div className="clearance-meta"><span><strong>Payment gate</strong>{item.payment_unlocked_at ? `Verified ${dateText(item.payment_unlocked_at)}` : 'Not verified'}</span><span><strong>Profile</strong>{item.profile_confirmed_at ? 'Confirmed' : 'Confirmation required'}</span><span><strong>Final decision</strong>{item.final_assent}</span><span><strong>Completed</strong>{dateText(item.completed_at)}</span></div>
           {!item.profile_confirmed_at && <form className="management-form" onSubmit={(e) => void confirmProfile(e, item)}><h3>Confirm your particulars</h3><label htmlFor={`student-name-${item.id}`}>Full name</label><input id={`student-name-${item.id}`} value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={160} required /><label htmlFor={`student-department-${item.id}`}>Department</label><select id={`student-department-${item.id}`} value={departmentId} onChange={(e) => { setDepartmentId(e.target.value); setProgrammeId(''); }} required><option value="">Select department</option>{dashboard.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select><label htmlFor={`student-programme-${item.id}`}>Programme</label><select id={`student-programme-${item.id}`} value={programmeId} onChange={(e) => setProgrammeId(e.target.value)} required disabled={!departmentId}><option value="">Select programme</option>{dashboard.programmes.filter((p) => p.department_id === departmentId).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><label htmlFor={`student-gender-${item.id}`}>Gender</label><select id={`student-gender-${item.id}`} value={gender} onChange={(e) => setGender(e.target.value)}><option value="">Select</option><option value="female">Female</option><option value="male">Male</option></select><label htmlFor={`student-address-${item.id}`}>Permanent address</label><textarea id={`student-address-${item.id}`} rows={2} maxLength={500} value={address} onChange={(e) => setAddress(e.target.value)} /><button className="primary-button" type="submit" disabled={Boolean(busy)}>{busy === 'confirm_profile' ? 'Saving…' : 'Save and confirm particulars'}</button></form>}
           <div className="clearance-section-heading"><div><h3>Office requirements</h3><p className="muted">Track each required office's decision and remarks.</p></div><span className="role-count">{item.requirements.filter((r) => r.status === 'cleared').length}/{item.requirements.filter((r) => r.required).length}</span></div>
-          {!item.requirements.length ? <p className="muted">The college has not configured the required clearance offices for this session yet. Clearance requests cannot be submitted until the requirements are configured.</p> : <div className="clearance-request-list">{item.requirements.map((req) => <article className="panel" key={req.id}><div className="clearance-card-header"><div><h3>{req.office_name}</h3><p className="clearance-reg">{req.office_code}</p></div><span className={`clearance-status status-${req.status}`}>{statusText(req.status)}</span></div>{req.instructions && <p className="clearance-instructions">{req.instructions}</p>}{req.comments.map((c) => <div className="clearance-comment" key={c.id}><p>{c.comment_text}</p><small>{c.author_role.replaceAll('_', ' ')} · {dateText(c.created_at)}</small></div>)}</article>)}</div>}
+          {!item.requirements.length ? <p className="muted">The college has not configured the required clearance offices for this session yet. Clearance requests cannot be submitted until the requirements are configured.</p> : <div className="clearance-request-list">{item.requirements.map((req) => <article className="panel" key={req.id}><div className="clearance-card-header"><div><h3>{req.office_name}</h3><p className="clearance-reg">{req.office_code}</p></div><span className={`clearance-status status-${req.status}`}>{statusText(req.status)}</span></div>{req.instructions && <p className="clearance-instructions">{req.instructions}</p>}{(req.office_code.toLowerCase() === 'bur' || /bursar|bursary/i.test(req.office_name)) && <div className="bursary-receipt-panel"><h4>Payment receipt for Bursary</h4><p className="muted">Upload a PDF or image receipt (maximum 5 MB). Only the Bursar can view or download it. Uploading does not clear your request.</p>{req.receipts.map((receipt) => <p className="field-note" key={receipt.id}>Submitted: {receipt.original_filename} · {receipt.uploaded_at ? dateText(receipt.uploaded_at) : 'Processing'}</p>)}{req.status !== 'cleared' && req.request_id && <label className="secondary-button" htmlFor={'receipt-' + item.id + '-' + req.id}>{busy === 'receipt-' + req.id ? 'Uploading receipt…' : req.receipts.length ? 'Upload another receipt' : 'Choose receipt file'}</label>}<input id={'receipt-' + item.id + '-' + req.id} type="file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden disabled={Boolean(busy) || req.status === 'cleared' || !req.request_id} onChange={(e) => void uploadBursaryReceipt(e, item, req)} /></div>}{req.comments.map((c) => <div className="clearance-comment" key={c.id}><p>{c.comment_text}</p><small>{c.author_role.replaceAll('_', ' ')} · {dateText(c.created_at)}</small></div>)}</article>)}</div>}
           {item.final_assent !== 'assented' && <button className="primary-button" type="button" disabled={Boolean(busy) || !item.payment_unlocked_at || !item.profile_confirmed_at || !item.active} onClick={() => void requestClearance(item)}>{busy === 'request_clearance' ? 'Submitting…' : 'Submit clearance requests'}</button>}
         </section>)}
       </>}
