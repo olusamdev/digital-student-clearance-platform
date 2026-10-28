@@ -53,7 +53,7 @@ async function sendRequestTemplate(to: string, request: {
   const parameters = [
     request.studentName, request.registrationNumber, request.officeName,
     request.department || "Not specified", request.programme || "Not specified",
-    request.sessionName || "Current session",
+    request.sessionName || "Current session", request.instructions || "No additional instructions",
   ].map((text) => ({ type: "text", text: String(text).slice(0, 900) }));
   const components: Record<string, unknown>[] = [
     { type: "body", parameters },
@@ -134,16 +134,24 @@ async function dispatchSessionRequests(sessionStudentId: string) {
     for (const userId of recipientIds) {
       const profile = profiles.get(userId);
       if (!profile?.whatsapp_phone) continue;
-      const { data: existing } = await admin.from("whatsapp_messages").select("id")
+      const { data: existing } = await admin.from("whatsapp_messages").select("id,delivery_status")
         .eq("clearance_request_id", row.id).eq("recipient_user_id", userId)
         .eq("direction", "outbound").eq("event_type", "clearance_request").maybeSingle();
-      if (existing) { skipped++; continue; }
-      const { data: log, error: logError } = await writeMessageLog({
-        requestId: row.id, recipientUserId: userId, direction: "outbound", eventType: "clearance_request",
-        phone: profile.whatsapp_phone, status: "queued",
-        payload: { office_code: office.code, student_id: student.id },
-      });
-      if (logError || !log?.id) { skipped++; continue; }
+      if (existing && existing.delivery_status !== "failed") { skipped++; continue; }
+      let logId = existing?.id as string | undefined;
+      if (existing?.id) {
+        await admin.from("whatsapp_messages").update({ delivery_status: "queued", phone_number: profile.whatsapp_phone })
+          .eq("id", existing.id);
+      } else {
+        const { data: log, error: logError } = await writeMessageLog({
+          requestId: row.id, recipientUserId: userId, direction: "outbound", eventType: "clearance_request",
+          phone: profile.whatsapp_phone, status: "queued",
+          payload: { office_code: office.code, student_id: student.id },
+        });
+        if (logError || !log?.id) { skipped++; continue; }
+        logId = log.id;
+      }
+      if (!logId) { skipped++; continue; }
 
       const result = await sendRequestTemplate(profile.whatsapp_phone, {
         id: row.id, studentName: student.full_name, registrationNumber: student.registration_number,
@@ -151,7 +159,7 @@ async function dispatchSessionRequests(sessionStudentId: string) {
         sessionName: session?.name ?? session?.academic_session ?? "Current session",
         instructions: requirement.instructions ?? null,
       });
-      await updateMessageLog(log.id, result.ok ? "sent" : "failed", result.id);
+      await updateMessageLog(logId, result.ok ? "sent" : "failed", result.id);
       if (result.ok) sent++;
       else errors.push(`${office.code}: ${result.error ?? "send failed"}`);
     }
