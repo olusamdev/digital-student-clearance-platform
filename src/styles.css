@@ -80,3 +80,5 @@
 
 /* Bursary receipt upload and review */
 .bursary-receipt-panel{margin:18px 0;padding:18px;border:1px solid #dbe4dc;border-radius:12px;background:#f8faf7}.bursary-receipt-panel h4{margin:0 0 8px;font-family:Manrope,sans-serif;font-size:15px}.bursary-receipt-panel .muted{margin:0 0 12px;font-size:13px}.bursary-receipt-panel .secondary-button{display:inline-flex;align-items:center;justify-content:center;width:auto;min-height:42px;padding:0 14px;margin:8px 8px 8px 0;text-decoration:none}.bursary-receipt-panel input[type=file][hidden]{display:none}.bursary-receipt-panel .field-note{font-size:12px;margin:8px 0;color:#65776b}
+
+.whatsapp-toggle{display:flex!important;align-items:center;gap:9px;font-size:12px!important;line-height:1.45;margin:13px 0!important;cursor:pointer}.management-form .whatsapp-checkbox{width:17px!important;height:17px!important;min-height:17px!important;flex:0 0 17px;margin:0;padding:0;accent-color:#326b49}.staff-edit-form{border:1px solid #e4e9e1;border-radius:12px;padding:16px;margin:16px 0;background:#fbfcfa}.staff-edit-form .panel-heading{margin-bottom:8px}.staff-edit-form .panel-heading h3{margin:4px 0;font-size:16px}
