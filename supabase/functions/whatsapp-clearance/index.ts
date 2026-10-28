@@ -263,23 +263,21 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
   const raw = await req.text();
-  const signature = req.headers.get("x-hub-signature-256");
-  if (!appSecret || !(await verifySignature(raw, signature, appSecret))) {
-    return json({ error: "Invalid webhook signature" }, 401);
-  }
-
   let payload: Record<string, unknown>;
   try { payload = JSON.parse(raw); } catch { return json({ error: "Invalid JSON" }, 400); }
-
-  // Internal server-to-server dispatch from student-portal. This path is protected by
-  // the service-role key and is only accepted after Meta's request-signature check above.
-  // Dispatch requests use a separate route below; a valid Meta signature is not expected
-  // for internal calls, so handle them before webhook signature verification in deployments.
   const body = payload as Record<string, unknown>;
+
+  // Internal server-to-server dispatch from student-portal is authenticated with the
+  // service-role key. It does not originate from Meta and therefore has no Meta signature.
   if (body.action === "dispatch_student_requests") {
     const auth = req.headers.get("authorization") ?? "";
     if (!serviceKey || auth !== `Bearer ${serviceKey}`) return json({ error: "Unauthorized" }, 401);
     return await dispatchSessionRequests(String(body.session_student_id ?? ""));
+  }
+
+  const signature = req.headers.get("x-hub-signature-256");
+  if (!appSecret || !(await verifySignature(raw, signature, appSecret))) {
+    return json({ error: "Invalid webhook signature" }, 401);
   }
 
   const entries = Array.isArray(body.entry) ? body.entry as Array<Record<string, unknown>> : [];
