@@ -59,6 +59,7 @@ const dateText = (value: string | null) => value ? new Date(value).toLocaleStrin
 
 export default function OfficeClearance({ roles }: { roles: string[] }) {
   const relevant = roles.some((role) => eligibleRoles.has(role));
+  const isBursar = roles.includes('bursar');
   const isProvost = roles.includes('provost');
   const isRegistrar = roles.includes('registrar');
   const [queue, setQueue] = useState<QueueData | null>(null);
@@ -96,7 +97,7 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
         reminder_interval_hours: Number(data?.reminder_interval_hours || 24),
       });
       setIntervalHours(String(data?.reminder_interval_hours || 24));
-      if (roles.includes('bursar')) {
+      if (isBursar) {
         const { data: receiptData, error: receiptError } = await supabase.functions.invoke('bursary-receipts', {
           body: { action: 'list_bursar_receipts' },
         });
@@ -121,7 +122,7 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
     } finally {
       setLoading(false);
     }
-  }, [invoke, roles]);
+  }, [invoke, isBursar]);
 
   useEffect(() => {
     if (!relevant) return;
