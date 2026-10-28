@@ -5,7 +5,7 @@
 1. In Meta for Developers, create or select the college's Meta app and add the **WhatsApp** product. Connect the college's WhatsApp Business Account and production phone number.
 2. Create and get approval for a **Utility** message template named `dscp_clearance_request` (or set the actual approved name in Supabase). Use this body with six text parameters:
 
-   `New clearance request for {{1}} (Reg. No. {{2}}). Office: {{3}}. Department: {{4}}. Programme: {{5}}. Session: {{6}}. Use the buttons below to Clear or Comment.`
+   `New clearance request for {{1}} (Reg. No. {{2}}). Office: {{3}}. Department: {{4}}. Programme: {{5}}. Session: {{6}}. Instructions: {{7}}. Use the buttons below to Clear or Comment.`
 
    Add two **Quick Reply** buttons in this order, with exact labels **Clear** and **Comment**. The function sends request-specific payloads for the buttons. The template is required because a newly assigned officer may not have an open 24-hour WhatsApp conversation with the college.
 3. Set the Meta webhook callback URL to:
