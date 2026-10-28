@@ -89,11 +89,12 @@ Deno.serve(async (req) => {
       const requirementIds = (requirements ?? []).map((r) => r.id);
       if (!requirementIds.length) return json({ error: "No Bursary requirement is configured for this clearance session." }, 409, origin);
       const { data: requests, error: requestError } = await admin.from("clearance_requests")
-        .select("id,requirement_id").eq("session_student_id", sessionStudentId).in("requirement_id", requirementIds);
+        .select("id,requirement_id,status").eq("session_student_id", sessionStudentId).in("requirement_id", requirementIds);
       if (requestError) return json({ error: "Could not verify the Bursary clearance request." }, 500, origin);
-      const request = (requests ?? []).find((r) => r.id === text(payload.clearance_request_id, 80)) ??
-        (requests ?? []).sort((a, b) => String(b.id).localeCompare(String(a.id)))[0];
+      const requestedId = text(payload.clearance_request_id, 80);
+      const request = requestedId ? (requests ?? []).find((r) => r.id === requestedId) : (requests ?? [])[0];
       if (!request) return json({ error: "Submit your clearance requests before uploading the Bursary receipt." }, 409, origin);
+      if (request.status === "cleared") return json({ error: "This Bursary request has already been cleared. Contact the Bursar if a correction is needed." }, 409, origin);
 
       if (action === "create_upload") {
         const filename = text(payload.filename, 180).replace(/[\\/\\\\\u0000-\u001f]/g, "_") || "receipt";
