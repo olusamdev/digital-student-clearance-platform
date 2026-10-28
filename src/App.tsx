@@ -10,7 +10,7 @@ import StudentPortal from './components/StudentPortal';
 import StudentImport from './components/StudentImport';
 import StudentAccessTools from './components/StudentAccessTools';
 
-type StaffProfile = { user_id: string; full_name: string; username?: string | null; email: string | null; staff_number: string | null; must_change_password?: boolean; active: boolean; created_at?: string };
+type StaffProfile = { user_id: string; full_name: string; username?: string | null; email: string | null; staff_number: string | null; must_change_password?: boolean; active: boolean; created_at?: string; whatsapp_phone?: string | null; whatsapp_enabled?: boolean };
 type RoleAssignment = { role: string; office_id: string | null; department_id?: string | null; active: boolean; office_name?: string | null; department_name?: string | null };
 type StaffContext = { profile: StaffProfile; roles: RoleAssignment[] };
 type Office = { id: string; code: string; name: string; active: boolean };
@@ -56,6 +56,14 @@ export default function App() {
   const [firstPassword, setFirstPassword] = useState('');
   const [firstPasswordConfirm, setFirstPasswordConfirm] = useState('');
   const [inviteNumber, setInviteNumber] = useState('');
+  const [inviteWhatsAppPhone, setInviteWhatsAppPhone] = useState('');
+  const [inviteWhatsAppEnabled, setInviteWhatsAppEnabled] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<StaffRow | null>(null);
+  const [editStaffName, setEditStaffName] = useState('');
+  const [editStaffNumber, setEditStaffNumber] = useState('');
+  const [editWhatsAppPhone, setEditWhatsAppPhone] = useState('');
+  const [editWhatsAppEnabled, setEditWhatsAppEnabled] = useState(false);
+  const [editStaffBusy, setEditStaffBusy] = useState(false);
   const [inviteRole, setInviteRole] = useState('clearance_officer');
   const [inviteOffice, setInviteOffice] = useState('');
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -212,6 +220,7 @@ export default function App() {
     const needsDepartment = inviteRole === 'head_of_department';
     const { data, error: invokeError } = await supabase.functions.invoke('invite-staff', { body: {
       full_name: inviteName.trim(), username: inviteUsername.trim().toLowerCase(), staff_number: inviteNumber.trim() || null,
+      whatsapp_phone: inviteWhatsAppPhone.trim() || null, whatsapp_enabled: inviteWhatsAppEnabled,
       role: inviteRole, office_id: needsOffice ? (selectedOffice?.id || null) : null, department_id: needsDepartment ? (inviteDepartment || null) : null,
     } });
     setInviteBusy(false);
@@ -224,7 +233,37 @@ export default function App() {
     }
     setActivationCode(String(data.activation_code ?? ''));
     setNotice(`Staff account created for ${inviteUsername.trim()}. Give the activation code to the officer securely; it is shown only once.`);
-    setInviteName(''); setInviteUsername(''); setInviteNumber(''); setInviteRole('clearance_officer'); setInviteOffice(''); setInviteDepartment('');
+    setInviteName(''); setInviteUsername(''); setInviteNumber(''); setInviteWhatsAppPhone(''); setInviteWhatsAppEnabled(false); setInviteRole('clearance_officer'); setInviteOffice(''); setInviteDepartment('');
+    await loadStaffList();
+  }
+
+  function openStaffEditor(row: StaffRow) {
+    setEditingStaff(row);
+    setEditStaffName(row.full_name);
+    setEditStaffNumber(row.staff_number ?? '');
+    setEditWhatsAppPhone(row.whatsapp_phone ?? '');
+    setEditWhatsAppEnabled(Boolean(row.whatsapp_enabled));
+    setStaffError('');
+  }
+
+  async function handleStaffUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingStaff) return;
+    setEditStaffBusy(true); setStaffError(''); setNotice('');
+    const { data, error: invokeError } = await supabase.functions.invoke('update-staff', { body: {
+      target_user_id: editingStaff.user_id, full_name: editStaffName.trim(),
+      staff_number: editStaffNumber.trim() || null,
+      whatsapp_phone: editWhatsAppPhone.trim() || null, whatsapp_enabled: editWhatsAppEnabled,
+    } });
+    setEditStaffBusy(false);
+    if (invokeError || data?.error || !data?.success) {
+      setStaffError(invokeError
+        ? await describeFunctionError(invokeError, 'update-staff', 'Staff details could not be updated.')
+        : (typeof data?.error === 'string' ? data.error : 'Staff details could not be updated.'));
+      return;
+    }
+    setNotice(`Staff details updated for ${editingStaff.full_name}.`);
+    setEditingStaff(null);
     await loadStaffList();
   }
 
