@@ -47,6 +47,15 @@ Deno.serve(async (req) => {
     const role = String(body.role ?? "");
     const officeId = body.office_id ? String(body.office_id) : null;
     const departmentId = body.department_id ? String(body.department_id) : null;
+    const rawWhatsAppPhone = body.whatsapp_phone == null ? "" : String(body.whatsapp_phone).trim();
+    const whatsappPhone = rawWhatsAppPhone ? rawWhatsAppPhone.replace(/\D/g, "") : null;
+    const whatsappEnabled = body.whatsapp_enabled === true;
+    if (whatsappPhone && !/^[1-9][0-9]{7,14}$/.test(whatsappPhone)) {
+      return json({ error: "Enter the officer's WhatsApp number with country code, e.g. 2348012345678." }, 400);
+    }
+    if (whatsappEnabled && !whatsappPhone) {
+      return json({ error: "Enter a WhatsApp number before enabling WhatsApp clearance actions" }, 400);
+    }
     const rolesAllowed = ["admin", "clearance_officer", "head_of_department", "registrar", "provost", "certification_officer", "bursar"];
     if (!/^[a-z0-9._-]{3,40}$/.test(username) || !name || name.length > 160 || (staffNumber && staffNumber.length > 80) || !rolesAllowed.includes(role)) {
       return json({ error: "Provide a valid username, full name, optional staff number, and permitted role" }, 400);
@@ -84,6 +93,7 @@ Deno.serve(async (req) => {
     const userId = created.user.id;
     const { error: profileInsertError } = await admin.from("staff_profiles").insert({
       user_id: userId, full_name: name, username, staff_number: staffNumber, email: null, active: true, must_change_password: true,
+      whatsapp_phone: whatsappPhone, whatsapp_enabled: whatsappEnabled,
     });
     if (profileInsertError) {
       await admin.auth.admin.deleteUser(userId);
@@ -101,7 +111,7 @@ Deno.serve(async (req) => {
     }
     await admin.from("audit_events").insert({
       actor_user_id: actor.id, event_type: "staff.account_created", entity_type: "staff_profile", entity_id: userId,
-      details: { username, role, office_id: officeId, department_id: departmentId, staff_number_supplied: Boolean(staffNumber) },
+      details: { username, role, office_id: officeId, department_id: departmentId, staff_number_supplied: Boolean(staffNumber), whatsapp_enabled: whatsappEnabled },
     });
     return json({ success: true, username, activation_code: code, role }, 201);
   } catch (error) {
