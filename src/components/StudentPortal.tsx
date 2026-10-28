@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 import { describeFunctionError } from '../functionErrors';
@@ -334,7 +334,7 @@ export default function StudentPortal() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not confirm your particulars.'); }
   }
 
-  async function uploadBursaryReceipt(event: React.ChangeEvent<HTMLInputElement>, item: StudentSession, req: Requirement) {
+  async function uploadBursaryReceipt(event: ChangeEvent<HTMLInputElement>, item: StudentSession, req: Requirement) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file || !req.request_id) return;
