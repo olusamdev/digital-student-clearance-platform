@@ -102,7 +102,7 @@ async function dispatchSessionRequests(sessionStudentId: string) {
   const [{ data: student }, { data: session }, { data: requests }] = await Promise.all([
     admin.from("student_records").select("id,full_name,registration_number,department_id,programme_id").eq("id", link.student_id).maybeSingle(),
     admin.from("clearance_sessions").select("name,academic_session").eq("id", link.session_id).maybeSingle(),
-    admin.from("clearance_requests").select("id,requirement_id,status").eq("session_student_id", sessionStudentId).in("status", ["requested", "needs_attention"]),
+    admin.from("clearance_requests").select("id,requirement_id,status,requested_at").eq("session_student_id", sessionStudentId).in("status", ["requested", "needs_attention"]),
   ]);
   if (!student || !requests?.length) return json({ success: true, sent: 0, reason: "No actionable clearance requests" });
 
@@ -134,9 +134,10 @@ async function dispatchSessionRequests(sessionStudentId: string) {
     for (const userId of recipientIds) {
       const profile = profiles.get(userId);
       if (!profile?.whatsapp_phone) continue;
+      const noticeEvent = `clearance_request:${String(row.requested_at ?? row.id)}`;
       const { data: existing } = await admin.from("whatsapp_messages").select("id,delivery_status")
         .eq("clearance_request_id", row.id).eq("recipient_user_id", userId)
-        .eq("direction", "outbound").eq("event_type", "clearance_request").maybeSingle();
+        .eq("direction", "outbound").eq("event_type", noticeEvent).maybeSingle();
       if (existing && existing.delivery_status !== "failed") { skipped++; continue; }
       let logId = existing?.id as string | undefined;
       if (existing?.id) {
@@ -144,7 +145,7 @@ async function dispatchSessionRequests(sessionStudentId: string) {
           .eq("id", existing.id);
       } else {
         const { data: log, error: logError } = await writeMessageLog({
-          requestId: row.id, recipientUserId: userId, direction: "outbound", eventType: "clearance_request",
+          requestId: row.id, recipientUserId: userId, direction: "outbound", eventType: noticeEvent,
           phone: profile.whatsapp_phone, status: "queued",
           payload: { office_code: office.code, student_id: student.id },
         });
