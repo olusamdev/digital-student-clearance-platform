@@ -26,7 +26,11 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_messages (
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_messages_one_request_notice_per_officer\n  ON public.whatsapp_messages (clearance_request_id, recipient_user_id, event_type)\n  WHERE direction = 'outbound' AND clearance_request_id IS NOT NULL;\n\nALTER TABLE public.whatsapp_messages ENABLE ROW LEVEL SECURITY;
+CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_messages_one_request_notice_per_officer
+  ON public.whatsapp_messages (clearance_request_id, recipient_user_id, event_type)
+  WHERE direction = 'outbound' AND clearance_request_id IS NOT NULL;
+
+ALTER TABLE public.whatsapp_messages ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.whatsapp_messages FROM PUBLIC, anon, authenticated;
 GRANT ALL ON public.whatsapp_messages TO service_role;
 
