@@ -245,6 +245,18 @@ Deno.serve(async (req) => {
         }
       }
       await admin.from("audit_events").insert({ actor_student_id: student.id, event_type: "student.clearance_submitted", entity_type: "session_student", entity_id: link.id, details: { requirement_count: applicable.length } });
+      // WhatsApp delivery is best-effort: a messaging configuration problem must not undo
+      // a successfully submitted clearance request.
+      try {
+        const dispatchResponse = await fetch(`${url}/functions/v1/whatsapp-clearance`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${service}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "dispatch_student_requests", session_student_id: link.id }),
+        });
+        if (!dispatchResponse.ok) console.warn("WhatsApp clearance dispatch returned", dispatchResponse.status);
+      } catch (dispatchError) {
+        console.warn("WhatsApp clearance dispatch could not be reached", dispatchError);
+      }
       return json({ success: true, submitted_count: applicable.length }, 200, origin);
     }
 
