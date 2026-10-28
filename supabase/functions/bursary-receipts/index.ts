@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
       if (request.status === "cleared") return json({ error: "This Bursary request has already been cleared. Contact the Bursar if a correction is needed." }, 409, origin);
 
       if (action === "create_upload") {
-        const filename = text(payload.filename, 180).replace(/[\\/\\\\\u0000-\u001f]/g, "_") || "receipt";
+        const filename = text(payload.filename, 180).replace(/[\/\\\u0000-\u001f]/g, "_") || "receipt";
         const mimeType = text(payload.mime_type, 100).toLowerCase();
         const sizeBytes = Number(payload.size_bytes);
         if (!ALLOWED_TYPES.has(mimeType)) return json({ error: "Upload a PDF, JPG, PNG, or WebP receipt." }, 400, origin);
