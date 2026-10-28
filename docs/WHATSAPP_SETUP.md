@@ -3,7 +3,7 @@
 ## Meta configuration
 
 1. In Meta for Developers, create or select the college's Meta app and add the **WhatsApp** product. Connect the college's WhatsApp Business Account and production phone number.
-2. Create and get approval for a **Utility** message template named `dscp_clearance_request` (or set the actual approved name in Supabase). Use this body with six text parameters:
+2. Create and get approval for a **Utility** message template named `dscp_clearance_request` (or set the actual approved name in Supabase). Use this body with seven text parameters:
 
    `New clearance request for {{1}} (Reg. No. {{2}}). Office: {{3}}. Department: {{4}}. Programme: {{5}}. Session: {{6}}. Instructions: {{7}}. Use the buttons below to Clear or Comment.`
 
