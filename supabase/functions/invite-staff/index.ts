@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     const officeId = body.office_id ? String(body.office_id) : null;
     const departmentId = body.department_id ? String(body.department_id) : null;
     const rawWhatsAppPhone = body.whatsapp_phone == null ? "" : String(body.whatsapp_phone).trim();
-    const whatsappPhone = rawWhatsAppPhone ? rawWhatsAppPhone.replace(/\\D/g, "") : null;
+    const whatsappPhone = rawWhatsAppPhone ? rawWhatsAppPhone.replace(/\D/g, "") : null;
     const whatsappEnabled = body.whatsapp_enabled === true;
     if (whatsappPhone && !/^[1-9][0-9]{7,14}$/.test(whatsappPhone)) {
       return json({ error: "Enter the officer's WhatsApp number with country code, e.g. 2348012345678." }, 400);
