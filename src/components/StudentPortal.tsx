@@ -350,7 +350,7 @@ export default function StudentPortal() {
       const { error: uploadError } = await supabase.storage.from('bursary-receipts').uploadToSignedUrl(String(prepared.path), String(prepared.token), file, { contentType: file.type, upsert: false });
       if (uploadError) throw new Error('The receipt file could not be uploaded. Please try again.');
       const { data: completed, error: completeError } = await supabase.functions.invoke('bursary-receipts', {
-        body: { action: 'complete_upload', payload: { session_student_id: item.id, receipt_id: prepared.receipt_id } },
+        body: { action: 'complete_upload', payload: { session_student_id: item.id, clearance_request_id: req.request_id, receipt_id: prepared.receipt_id } },
       });
       if (completeError || completed?.error) throw new Error(completed?.error || 'The receipt could not be submitted for review.');
       setNotice('Receipt uploaded and submitted to the Bursar for review. This does not clear your Bursary request.');
