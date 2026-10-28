@@ -23,4 +23,6 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Type-check WhatsApp integration
+        run: deno check --no-lock supabase/functions/update-staff/index.ts supabase/functions/whatsapp-clearance/index.ts
       - run: deno check --no-lock supabase/functions/student-portal/index.ts supabase/functions/student-payments/index.ts supabase/functions/manage-student-access/index.ts supabase/functions/manage-clearance/index.ts supabase/functions/manage-clearance-requirements/index.ts supabase/functions/invite-staff/index.ts supabase/functions/complete-staff-setup/index.ts supabase/functions/list-staff/index.ts supabase/functions/bursary-receipts/index.ts supabase/functions/update-staff/index.ts supabase/functions/whatsapp-clearance/index.ts
