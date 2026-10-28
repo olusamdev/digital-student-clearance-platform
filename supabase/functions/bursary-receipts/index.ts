@@ -124,6 +124,7 @@ Deno.serve(async (req) => {
       const { data: receipt, error: receiptError } = await admin.from("bursary_receipts")
         .select("id,storage_path,uploaded_by_student_id,session_student_id")
         .eq("id", receiptId).eq("session_student_id", sessionStudentId)
+        .eq("clearance_request_id", request.id)
         .eq("uploaded_by_student_id", student.id).maybeSingle();
       if (receiptError || !receipt) return json({ error: "Receipt upload not found." }, 404, origin);
       const { data: signedCheck, error: checkError } = await admin.storage.from(BUCKET).createSignedUrl(receipt.storage_path, 60);
