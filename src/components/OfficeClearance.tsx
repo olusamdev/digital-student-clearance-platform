@@ -3,6 +3,7 @@ import { supabase } from '../supabase';
 import { describeFunctionError } from '../functionErrors';
 
 type ClearanceComment = { id: string; comment_text: string; author_role: string; created_at: string };
+type BursaryReceipt = { id: string; clearance_request_id: string; student_name: string; registration_number: string; department: string | null; programme: string | null; session_name: string; academic_session: string | null; original_filename: string; mime_type: string; size_bytes: number; uploaded_at: string | null; request_status: string };
 type ClearanceRequest = {
   request_id: string;
   session_student_id: string;
@@ -69,6 +70,8 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
   const [assentDrafts, setAssentDrafts] = useState<Record<string, string>>({});
   const [intervalHours, setIntervalHours] = useState('24');
   const [notifications, setNotifications] = useState<NoticeItem[]>([]);
+  const [bursaryReceipts, setBursaryReceipts] = useState<BursaryReceipt[]>([]);
+  const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
 
   const invoke = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
     const { data, error: invokeError } = await supabase.functions.invoke('manage-clearance', {
@@ -93,6 +96,16 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
         reminder_interval_hours: Number(data?.reminder_interval_hours || 24),
       });
       setIntervalHours(String(data?.reminder_interval_hours || 24));
+      if (roles.includes('bursar')) {
+        const { data: receiptData, error: receiptError } = await supabase.functions.invoke('bursary-receipts', {
+          body: { action: 'list_bursar_receipts' },
+        });
+        if (!receiptError && !receiptData?.error) setBursaryReceipts(Array.isArray(receiptData?.receipts) ? receiptData.receipts as BursaryReceipt[] : []);
+        else setBursaryReceipts([]);
+      } else {
+        setBursaryReceipts([]);
+        setReceiptUrls({});
+      }
       const { data: authData } = await supabase.auth.getUser();
       if (authData.user) {
         const { data: noticeRows, error: noticeError } = await supabase
@@ -108,7 +121,7 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
     } finally {
       setLoading(false);
     }
-  }, [invoke]);
+  }, [invoke, roles]);
 
   useEffect(() => {
     if (!relevant) return;
@@ -130,6 +143,21 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
       await reload(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The operation failed.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function prepareReceiptDownload(receiptId: string) {
+    setBusy('receipt-' + receiptId); setError(''); setNotice('');
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke('bursary-receipts', {
+        body: { action: 'download_receipt', payload: { receipt_id: receiptId } },
+      });
+      if (invokeError || data?.error || !data?.url) throw new Error(data?.error || 'Could not open receipt.');
+      setReceiptUrls((old) => ({ ...old, [receiptId]: String(data.url) }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not open receipt.');
     } finally {
       setBusy('');
     }
@@ -213,6 +241,21 @@ export default function OfficeClearance({ roles }: { roles: string[] }) {
                 <span><strong>Requested</strong>{dateText(item.requested_at)}</span>
               </div>
               {item.instructions && <p className="clearance-instructions">{item.instructions}</p>}
+              {roles.includes('bursar') && bursaryReceipts.filter((receipt) => receipt.clearance_request_id === item.request_id).map((receipt) => (
+                <div className="bursary-receipt-panel" key={receipt.id}>
+                  <h4>Student payment receipt</h4>
+                  <div className="clearance-meta">
+                    <span><strong>Student</strong>{receipt.student_name}</span>
+                    <span><strong>Registration number</strong>{receipt.registration_number}</span>
+                    <span><strong>Department / programme</strong>{[receipt.department, receipt.programme].filter(Boolean).join(' · ') || '—'}</span>
+                    <span><strong>Session</strong>{receipt.academic_session || receipt.session_name}</span>
+                    <span><strong>Uploaded</strong>{dateText(receipt.uploaded_at)}</span>
+                    <span><strong>File</strong>{receipt.original_filename} · {(receipt.size_bytes / 1024).toFixed(0)} KB</span>
+                  </div>
+                  {!receiptUrls[receipt.id] ? <button className="secondary-button no-print" type="button" disabled={Boolean(busy)} onClick={() => void prepareReceiptDownload(receipt.id)}>{busy === 'receipt-' + receipt.id ? 'Preparing secure link…' : 'Open / download receipt'}</button> : <a className="secondary-button" href={receiptUrls[receipt.id]} target="_blank" rel="noreferrer">Open / download receipt</a>}
+                  <p className="field-note">Verify the receipt before using the existing clearance decision. Uploading alone does not clear this request.</p>
+                </div>
+              ))}
               {item.comments.length > 0 && (
                 <div className="clearance-comments">
                   <strong>Remarks</strong>
