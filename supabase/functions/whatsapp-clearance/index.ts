@@ -195,7 +195,7 @@ async function processButton(phone: string, requestId: string, action: "clear" |
     p_phone: normalized, p_request_id: requestId, p_action: "clear", p_comment_text: null,
   });
   if (error || !data?.success) {
-    await sendText(phone, `DSCP could not clear this request: ${error?.message ?? "Please open the staff portal and check its current status."}`);
+    await sendText(phone, "DSCP could not clear this request. It may already have been processed, or your account may not be assigned to this request. Please check the staff portal.");
     return;
   }
   await sendText(phone, `Confirmed: clearance for ${data.student_name} (${data.registration_number}) from ${data.office_name} has been marked CLEARED in DSCP.`);
@@ -215,7 +215,7 @@ async function processComment(phone: string, messageText: string) {
     p_phone: normalized, p_request_id: pending.clearance_request_id, p_action: "comment", p_comment_text: messageText,
   });
   if (error || !data?.success) {
-    await sendText(phone, `DSCP could not save the comment: ${error?.message ?? "Please retry from the latest notification."}`);
+    await sendText(phone, "DSCP could not save this comment. The request may no longer be actionable, or your account may not be assigned to it. Please check the staff portal.");
     return;
   }
   await admin.from("whatsapp_pending_comments").update({ consumed_at: new Date().toISOString() }).eq("id", pending.id);
@@ -298,24 +298,35 @@ Deno.serve(async (req: Request) => {
         const from = String(message.from ?? "");
         const messageId = String(message.id ?? "");
         if (!from || !messageId) continue;
-        const { error: logError } = await writeMessageLog({
+        const inserted = await writeMessageLog({
           direction: "inbound", eventType: "incoming", phone: normalizePhone(from),
           providerId: messageId, status: "received", payload: { type: message.type ?? "unknown" },
         });
-        if (logError?.code === "23505") continue;
-        if (logError) continue;
-
-        const interactive = message.interactive as Record<string, unknown> | undefined;
-        const buttonReply = interactive?.button_reply as Record<string, unknown> | undefined;
-        const replyId = String(buttonReply?.id ?? "");
-        const match = /^(clear|comment):([0-9a-f-]{36})$/i.exec(replyId);
-        if (match) {
-          await processButton(from, match[2], match[1].toLowerCase() as "clear" | "comment");
+        let inboundLogId = inserted.data?.id as string | undefined;
+        if (inserted.error?.code === "23505") {
+          const { data: prior } = await admin.from("whatsapp_messages").select("id,delivery_status")
+            .eq("provider_message_id", messageId).maybeSingle();
+          if (!prior || prior.delivery_status === "processed") continue;
+          inboundLogId = prior.id;
+        } else if (inserted.error || !inboundLogId) {
           continue;
         }
-        if (message.type === "text") {
-          const textBody = String((message.text as Record<string, unknown> | undefined)?.body ?? "").trim();
-          if (textBody) await processComment(from, textBody);
+
+        try {
+          const interactive = message.interactive as Record<string, unknown> | undefined;
+          const buttonReply = interactive?.button_reply as Record<string, unknown> | undefined;
+          const replyId = String(buttonReply?.id ?? "");
+          const match = /^(clear|comment):([0-9a-f-]{36})$/i.exec(replyId);
+          if (match) {
+            await processButton(from, match[2], match[1].toLowerCase() as "clear" | "comment");
+          } else if (message.type === "text") {
+            const textBody = String((message.text as Record<string, unknown> | undefined)?.body ?? "").trim();
+            if (textBody) await processComment(from, textBody);
+          }
+          await updateMessageLog(inboundLogId, "processed");
+        } catch (messageError) {
+          await updateMessageLog(inboundLogId, "failed");
+          console.error("WhatsApp inbound message processing failed", messageError);
         }
       }
     }
